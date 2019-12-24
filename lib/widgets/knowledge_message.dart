@@ -1,24 +1,27 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../utils/im_utils.dart';
 import '../models/im_message.dart';
 import '../models/knowledge_model.dart';
+import 'date_widget.dart';
 import 'im_avatar.dart';
 
 typedef SendKnowledgeMessage(KnowledgeModel message);
 class KnowledgeMessage extends StatelessWidget{
-  KnowledgeMessage({this.message, this.onSend});
+  KnowledgeMessage({this.message, this.onSend, this.isShowDate = false});
   final ImMessage message;
   final SendKnowledgeMessage onSend;
+  final bool isShowDate;
   bool get isSelf{
     return true;
   }
-  List<KnowledgeModel> get knowledgeModelList => (json.decode(message.payload) as List).map((i)=>KnowledgeModel.fromJson(i)).toList();
+  List<KnowledgeModel> get knowledgeModelList => ((json.decode(message.payload) as List).map((i)=>KnowledgeModel.fromJson(i)).toList())..add(KnowledgeModel(title: "以上都不是？我要找人工"));
+  
   @override
   Widget build(BuildContext context) {
-    int index = 0;
-    return Container(
-      margin: EdgeInsets.only(bottom: 15.0),
+    
+    Widget msgWidget(){
+      return Container(
+      margin: EdgeInsets.only(bottom: 25.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.start,
@@ -29,19 +32,9 @@ class KnowledgeMessage extends StatelessWidget{
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Row(
-                    children: [
-                      Text('${message.nickname}', style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16.0,
-                          color: Colors.black.withAlpha(150)
-                      )),
-                      Text(' ${ImUtils.formatDate(message.timestamp)} ', style: TextStyle(color: Colors.black45) ),
-                    ]
-                ),
                 Container(
                   margin: EdgeInsets.only(top: 3.0),
-                  width: 280.0,
+                  width: 290.0,
                   padding: EdgeInsets.symmetric(horizontal:10.0, vertical: 5.0),
                   decoration: BoxDecoration(
                       color: Colors.white,
@@ -62,11 +55,10 @@ class KnowledgeMessage extends StatelessWidget{
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      Text("以下是您关系的相关问题？", style:  TextStyle(color: Colors.black87.withAlpha(180), fontSize: 16.0)),
+                      Text("以下是您关心的相关问题？", style:  TextStyle(color: Colors.black87.withAlpha(180), fontSize: 16.0)),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: knowledgeModelList.map((KnowledgeModel item){
-                          index ++;
                           return GestureDetector(
                             onTap: () => onSend(item),
                             child: DefaultTextStyle(
@@ -79,7 +71,10 @@ class KnowledgeMessage extends StatelessWidget{
                                 child: Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: <Widget>[
-                                  Text(" • "),
+                                  Padding(
+                                    padding: EdgeInsets.only(top: 3.0),
+                                    child: Text(" • ", style: TextStyle(fontWeight: FontWeight.w600),),
+                                  ),
                                   Expanded(
                                     child: Text("${item.title}"),
                                   )
@@ -99,5 +94,18 @@ class KnowledgeMessage extends StatelessWidget{
         ],
       ),
     );
+    }
+    
+    return Column(
+      children: <Widget>[
+        Offstage(
+          offstage: !isShowDate,
+          child: DateWidget(date: message.timestamp,),
+        ),
+        msgWidget()
+      ],
+    );
+
+    
   }
 }

@@ -1,23 +1,17 @@
 import 'package:flutter/material.dart';
 import '../models/im_message.dart';
-import '../utils/im_utils.dart';
+import 'date_widget.dart';
 import 'im_avatar.dart';
 
 class TextMessage extends StatelessWidget{
-  TextMessage({this.message, this.onCancel, this.onOperation, this.isSelf});
+  TextMessage({this.message, this.onCancel, this.onOperation, this.isSelf, this.isShowDate = false});
   final ImMessage message;
   final VoidCallback onCancel;
   final VoidCallback onOperation;
+  final bool isShowDate;
   final bool isSelf;
   @override
   Widget build(BuildContext context) {
-
-    Widget _date(bool show){
-      return Offstage(
-        offstage: show,
-        child: Text(' ${ImUtils.formatDate(message.timestamp)} ', style: TextStyle(color: Colors.black45) ),
-      );
-    }
 
     Widget _avatar(bool show){
       return  Offstage(
@@ -42,8 +36,9 @@ class TextMessage extends StatelessWidget{
     }
 
 
-    return Container(
-      margin: EdgeInsets.only(bottom: 15.0),
+    Widget msgWidget(){
+      return Container(
+      margin: EdgeInsets.only(bottom: 25.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: isSelf ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -55,16 +50,6 @@ class TextMessage extends StatelessWidget{
               crossAxisAlignment: isSelf ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: <Widget>[
                 Row(
-                    children: [
-                      _date(!isSelf),
-                      Text('${message.nickname}', style: TextStyle(
-                        fontSize: 15.0,
-                        color: Colors.black.withAlpha(150)
-                      )),
-                      _date(isSelf),
-                    ]
-                ),
-                Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: <Widget>[
                     _cancel(),
@@ -73,7 +58,7 @@ class TextMessage extends StatelessWidget{
                       child: Container(
                         margin: EdgeInsets.only(top: 3.0),
                         constraints: BoxConstraints(
-                            maxWidth: 250.0
+                            maxWidth: 290.0
                         ),
                         padding: EdgeInsets.symmetric(horizontal:10.0, vertical: 5.0),
                         decoration: BoxDecoration(
@@ -107,5 +92,20 @@ class TextMessage extends StatelessWidget{
         ],
       ),
     );
+    }
+    
+    return Column(
+      children: <Widget>[
+        Offstage(
+          offstage: !isShowDate,
+          child: DateWidget(date: message.timestamp,),
+        ),
+        msgWidget()
+      ],
+    );
+
+
+
+
   }
 }

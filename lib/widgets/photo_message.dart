@@ -5,23 +5,18 @@ import 'package:flutter_advanced_networkimage/zoomable.dart';
 import '../models/im_message.dart';
 import '../utils/im_utils.dart';
 import 'cached_network_image.dart';
+import 'date_widget.dart';
 import 'im_avatar.dart';
 
 class PhotoMessage extends StatelessWidget{
-  PhotoMessage({this.message, this.onCancel, this.onOperation, this.isSelf});
+  PhotoMessage({this.message, this.onCancel, this.onOperation, this.isSelf, this.isShowDate = false});
   final ImMessage message;
   final VoidCallback onCancel;
   final VoidCallback onOperation;
+  final bool isShowDate;
   final bool isSelf;
   @override
   Widget build(BuildContext context) {
-
-    Widget _date(bool show){
-      return Offstage(
-        offstage: show,
-        child: Text(' ${ImUtils.formatDate(message.timestamp)} ', style: TextStyle(color: Colors.black45) ),
-      );
-    }
 
     Widget _avatar(bool show){
       return  Offstage(
@@ -69,9 +64,9 @@ class PhotoMessage extends StatelessWidget{
       );
     }
 
-
-    return Container(
-      margin: EdgeInsets.only(bottom: 15.0),
+    Widget msgWidget(){
+      return Container(
+      margin: EdgeInsets.only(bottom: 25.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: isSelf ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -82,17 +77,6 @@ class PhotoMessage extends StatelessWidget{
             child: Column(
               crossAxisAlignment: isSelf ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: <Widget>[
-                Row(
-                    children: [
-                      _date(!isSelf),
-                      Text('${message.nickname}', style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16.0,
-                          color: Colors.black.withAlpha(150)
-                      )),
-                      _date(isSelf),
-                    ]
-                ),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: <Widget>[
@@ -146,5 +130,18 @@ class PhotoMessage extends StatelessWidget{
         ],
       ),
     );
+    }
+
+    return Column(
+      children: <Widget>[
+        Offstage(
+          offstage: !isShowDate,
+          child: DateWidget(date: message.timestamp,),
+        ),
+        msgWidget()
+      ],
+    );
+
+    
   }
 }

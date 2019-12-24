@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../models/im_message.dart';
-import '../utils/im_utils.dart';
 
 class SystemMessage extends StatelessWidget{
   SystemMessage({this.message, this.isSelf});
@@ -8,8 +7,9 @@ class SystemMessage extends StatelessWidget{
   final bool isSelf;
   @override
   Widget build(BuildContext context) {
+
     return Padding(
-      padding: EdgeInsets.only(bottom: 15.0),
+      padding: EdgeInsets.only(bottom: 20.0),
       child: Container(
         height: 23.0,
         width: double.infinity,
@@ -29,7 +29,7 @@ class SystemMessage extends StatelessWidget{
                 case "end":
                   return Text("本次会话结束，感谢您的耐心与支持！");
                 case "transfer":
-                  return Text('已为您转接${message.transferAccount}号客服');
+                  return Text('已为您接入${message.transferAccount}号客服');
                 case "timeout":
                   return Text('由于您长时间未回复，系统结束了本次会话');
                 default:
@@ -39,5 +39,7 @@ class SystemMessage extends StatelessWidget{
         ),
       ),
     );
+
+    
   }
 }
