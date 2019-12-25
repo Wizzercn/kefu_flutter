@@ -4,6 +4,6 @@ import 'package:kefu_flutter/kefu_flutter.dart';
 
 void main() {
   test('adds one to input values', () {
-    KeFu();
+    KeFuController().view();
   });
 }

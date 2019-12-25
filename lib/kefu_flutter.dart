@@ -25,38 +25,223 @@ import 'widgets/photo_message.dart';
 import 'widgets/system_message.dart';
 import 'widgets/text_message.dart';
 
+
+/// KeFuController
+class KeFuController{
+
+  static KeFuController instance;       /// KeFuController实例
+
+  Dio http;                      /// http
+  ImUser imUser;                 /// IM 用户对象
+  ImTokenInfo imTokenInfo;       /// IM 签名对象
+  SharedPreferences prefs;       /// 缓存对象
+  Robot robot;                   /// 机器人对象
+  UploadSecret uploadSecret;     /// 上传配置对象
+  FlutterMimc flutterMimc;       /// IM 插件对象
+
+  /// 小米消息云配置
+  static const String APP_ID = "2882303761518282099";
+  static const String APP_KEY = "5521828290099";
+  static const String APP_SECRET = "516JCA60FdP9bHQUdpXK+Q==";
+
+  /// API 接口
+  static const String API_HOST = "http://kf.aissz.com:666/v1";   /// IM 后台网关
+  static const String API_REGISTER =   "/public/register";       /// IM 注册初始化IM账号
+  static const String API_ACTIVITY =   "/public/activity";       /// IM 上报最后活动时间 /uid
+  static const String API_GET_ROBOT =  "/public/robot/1";        /// IM 获取机器人      /platform
+  static const String API_GET_READ =   "/public/read";           /// IM 获取未读消息    /uid
+  static const String API_CLEAN_READ = "/public/clean_read";     /// IM 清除未读消息    /uid
+  static const String API_UPLOAD_SECRET = "/public/secret";      /// IM 获取上传配置
+  static const String API_UPLOAD_FILE = "/public/upload";        /// IM 内置文件上传
+  static const String API_QINIU_UPLOAD_FILE = "https://upload.qiniup.com";  /// IM 七牛文件上传
+
+  // 单列
+  static KeFuController get getInstance{
+    if(instance == null){
+     instance = KeFuController();
+    }
+    return instance;
+  }
+
+  /// 构造器
+  KeFuController(){
+    _dioInstance();
+    _getUploadSecret();
+    _upImLastActivity();
+    debugPrint("KeFuController实例化了");
+  }
+
+  /// 初始化
+  Future<void> init() async{
+    await _prefsInstance();
+    await _registerImAccount();
+    await _getRobot();
+    await _flutterMimcInstance();
+  }
+
+
+  // 获取客服View页面
+  Widget view() => _KeFu();
+
+    /// 实例化 dio
+  Future<void> _dioInstance() async{
+    if(http != null) return;
+    http = Dio();
+    http.options.baseUrl = API_HOST;
+    http.options.connectTimeout = 60000;
+    http.options.receiveTimeout = 60000;
+    http.options.headers = {};
+  }
+
+
+  /// 实例化 FlutterMimc
+  Future<void> _flutterMimcInstance() async{
+    flutterMimc = FlutterMimc.init(
+        debug: false,
+        appId: APP_ID,
+        appKey: APP_KEY,
+        appSecret: APP_SECRET,
+        appAccount: imUser.id.toString()
+    );
+    if(flutterMimc != null){
+      flutterMimc.login();
+      debugPrint("flutterMimc实例化完成");
+    }
+  }
+
+  /// 注册IM账号
+  Future<void> _registerImAccount() async{
+    try {
+      int imAccount = prefs.getInt("ImAccount") ?? 0;
+      Response response = await http.post(API_REGISTER, data: {
+        "type": 0,
+        "uid": 0,
+        "platform": Platform.isIOS ? 2 : 6,
+        "account_id": imAccount
+      });
+      if (response.data["code"] == 200) {
+        imTokenInfo = ImTokenInfo.fromJson(response.data["data"]["token"]["data"]);
+        imUser = ImUser.fromJson(response.data["data"]["user"]);
+        prefs.setInt("ImAccount", imUser.id);
+      } else {
+        // 1秒重试
+        debugPrint(response.data["error"]);
+        await Future.delayed(Duration(milliseconds: 1000));
+        _registerImAccount();
+      }
+    }catch(e){
+      debugPrint(e);
+    }
+  }
+
+  /// 获取机器人信息
+  Future<void> _getRobot() async{
+    try {
+      Response response = await http.get(API_GET_ROBOT);
+      if (response.data["code"] == 200) {
+        robot = Robot.fromJson(response.data["data"]);
+        prefs.setString("robot_" + robot.id.toString(), json.encode(response.data["data"]));
+      } else {
+        // 1秒重试
+        debugPrint(response.data["error"]);
+        await Future.delayed(Duration(milliseconds: 1000));
+        _getRobot();
+      }
+    }catch(e){
+      debugPrint(e);
+    }
+  }
+
+
+  /// 实例化 SharedPreferences
+  Future<void> _prefsInstance() async{
+    prefs = await SharedPreferences.getInstance();
+  }
+
+  /// 获取IM 未读消息
+  Future<int> getReadCount() async{
+    int _count = 0;
+    Response response = await http.get(API_HOST + API_GET_READ + '/' + imUser.id.toString());
+    if(response.data["code"] == 200){
+      _count = response.data["data"];
+    }
+    return _count;
+  }
+
+  /// 清除IM未读消息
+  Future<Response> cleanRead() async{
+    return await http.get(API_HOST + API_CLEAN_READ + '/' + imUser.id.toString());
+  }
+
+    /// 上报IM最后活动时间
+  Future<void> _upImLastActivity() async{
+    Timer.periodic(Duration(milliseconds: 20000), (_){
+      if(imUser != null)  http.get(API_HOST + API_ACTIVITY + '/' + imUser.id.toString());
+    });
+  }
+
+  /// 获取上传文件配置
+  Future<void> _getUploadSecret() async{
+    Response response = await http.get(API_HOST + API_UPLOAD_SECRET);
+    if(response.data["code"] == 200){
+      uploadSecret = UploadSecret.fromJson(response.data["data"]);
+    }else{
+      await Future.delayed(Duration(milliseconds: 1000));
+      _getUploadSecret();
+    }
+  }
+
+    /// 创建消息
+  /// [toAccount] 接收方账号
+  /// [msgType]   消息类型
+  /// [content]   消息内容
+  MessageHandle createMessage({int toAccount, String msgType, dynamic content}){
+    MIMCMessage message = MIMCMessage();
+    String millisecondsSinceEpoch = DateTime.now().millisecondsSinceEpoch.toString();
+    print(millisecondsSinceEpoch);
+    int timestamp = int.parse(millisecondsSinceEpoch.substring(0, millisecondsSinceEpoch.length - 3));
+    message.timestamp = timestamp;
+    message.bizType = msgType;
+    message.toAccount = toAccount.toString();
+    Map<String, dynamic> payloadMap = {
+      "from_account": imUser.id,
+      "to_account": toAccount,
+      "biz_type": msgType,
+      "version": "0",
+      "key": DateTime.now().millisecondsSinceEpoch,
+      "platform": Platform.isAndroid ? 6 : 2,
+      "timestamp": timestamp,
+      "read": 0,
+      "transfer_account": 0,
+      "payload": content
+    };
+    message.payload = base64Encode(utf8.encode(json.encode(payloadMap)));
+    return MessageHandle(
+        sendMessage: message,
+        localMessage: ImMessage.fromJson(payloadMap)..isShowCancel = true
+    );
+  }
+
+
+
+
+}
+
+
 /// MiNiIm screen
-class KeFu extends StatefulWidget{
+class _KeFu extends StatefulWidget{
   @override
   _KeFuState createState() => _KeFuState();
 }
 
 /// im screen state
-class _KeFuState extends State<KeFu>{
+class _KeFuState extends State<_KeFu>{
 
-  /// API 接口
-  String _host = "http://kf.aissz.com:666/v1";                   /// IM 后台网关
-  static const String _IM_REGISTER =   "/public/register";       /// IM 注册初始化IM账号
-  static const String _IM_ACTIVITY =   "/public/activity";       /// IM 上报最后活动时间 /uid
-  static const String _IM_GET_ROBOT =  "/public/robot/1";        /// IM 获取机器人      /platform
-  static const String _IM_GET_READ =   "/public/read";           /// IM 获取未读消息    /uid
-  static const String _IM_CLEAN_READ = "/public/clean_read";     /// IM 清除未读消息    /uid
-  static const String _IM_UPLOAD_SECRET = "/public/secret";      /// IM 获取上传配置
-
-  /// 小米消息云配置
-  static const String _APP_ID = "2882303761518282099";
-  static const String _APP_KEY = "5521828290099";
-  static const String _APP_SECRET = "516JCA60FdP9bHQUdpXK+Q==";
-
+  KeFuController _keFuController = KeFuController.getInstance;    /// 客服控制
+  
   FocusNode _focusNode = FocusNode();
   TextEditingController _editingController = TextEditingController();
   ScrollController _scrollController = ScrollController();
-  Dio _http;                      /// http
-  SharedPreferences _prefs;       /// 缓存对象
-  ImUser _imUser;                 /// IM 用户对象
-  Robot _robot;                   /// 机器人对象
-  ImTokenInfo _imTokenInfo;       /// IM 签名对象
-  FlutterMimc _flutterMimc;       /// IM 插件对象
   bool _isShowEmoJiPanel = false; /// 是否显示表情面板
   bool _isFirstConnect = true;    /// 是否是首次连线
   bool _isCustomerService  = false;    /// 当前是否是客服连线
@@ -68,25 +253,29 @@ class _KeFuState extends State<KeFu>{
   bool _isShowFileButtons = false; /// 是否显示文件按钮面板
   UploadSecret _uploadSecret;      /// 上传配置对象
 
-  /// 消息接收方账号 机器人 或 客服
-  int get _toAccount => _isCustomerService && _serviceUser != null ? _serviceUser.id : _robot.id;
+    @override
+   void initState(){
+    super.initState();
+    if(mounted){
+      _focusNode.addListener((){
+        if(_focusNode.hasFocus){
+          _onHideEmoJiPanel();
+          _hideFileButtons();
+          _toScrollEnd();
+        }
+      });
 
-  /// init
-  void _init() async{
-    await _prefsInstance();
-    await _dioInstance();
-    await _getUploadSecret();
-    await _registerImAccount();
-    await _getRobot();
-    if(_imTokenInfo != null){
-      await _flutterMimcInstance();
-      _upImLastActivity();
-    }else{
-      debugPrint("init fail");
+      /// 监听滚动条
+      _scrollController?.addListener(() => _onScrollViewControllerAddListener());
+
+      /// mimc事件监听
+      _addMimcEvent();
+
     }
-    // 监听滚动条
-    _scrollController?.addListener(() => _onScrollViewControllerAddListener());
   }
+
+  /// 消息接收方账号 机器人 或 客服
+  int get _toAccount => _isCustomerService && _serviceUser != null ? _serviceUser.id : _keFuController.robot.id;
 
   // 监听滚动条
   void _onScrollViewControllerAddListener() async{
@@ -108,34 +297,22 @@ class _KeFuState extends State<KeFu>{
     }
   }
 
-  /// 实例化 FlutterMimc
-  Future<void> _flutterMimcInstance() async{
-    _flutterMimc = FlutterMimc.init(
-        debug: false,
-        appId: _APP_ID,
-        appKey: _APP_KEY,
-        appSecret: _APP_SECRET,
-        appAccount: _imUser.id.toString()
-    );
-    if(_flutterMimc != null){
-      _flutterMimc.login();
-      _addMimcEvent();
-    }
-  }
-
   /// mimc事件监听
   StreamSubscription _subStatus;
   StreamSubscription _subHandleMessage;
   void _addMimcEvent(){
-
+    if(_keFuController.flutterMimc == null){
+       debugPrint("初始化失败了");
+      return;
+    }
     /// 状态发生改变
-    _subStatus = _flutterMimc.addEventListenerStatusChanged().listen((bool status) async{
+    _subStatus = _keFuController.flutterMimc.addEventListenerStatusChanged().listen((bool status) async{
       print("IM状态变更=======$status");
-      if(_prefs.getBool("_isCustomerService") == true){
+      if(_keFuController.prefs.getBool("_isCustomerService") == true){
         _isCustomerService = true;
-        int _customerServiceId = _prefs.getInt("_customerServiceId");
+        int _customerServiceId = _keFuController.prefs.getInt("_customerServiceId");
         if(_customerServiceId != null && _customerServiceId != -1){
-          String _serviceUseStr = _prefs.getString("service_user_$_customerServiceId");
+          String _serviceUseStr = _keFuController.prefs.getString("service_user_$_customerServiceId");
           if(_serviceUseStr != null){
             _serviceUser= CustomerService.fromJson(json.decode(_serviceUseStr));
           }else{
@@ -146,32 +323,32 @@ class _KeFuState extends State<KeFu>{
       if(_isFirstConnect && status && !_isCustomerService){
         _isFirstConnect = false;
         // 发送握手消息
-        MessageHandle messageHandle =  _createMessage(toAccount: _toAccount, msgType: "handshake", content: "我要对机器人问好");
+        MessageHandle messageHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "handshake", content: "我要对机器人问好");
         _sendMessage(messageHandle);
       }
       setState(() {});
     });
 
     /// 消息监听
-    _subHandleMessage = _flutterMimc.addEventListenerHandleMessage().listen((MIMCMessage msg) async{
+    _subHandleMessage = _keFuController.flutterMimc.addEventListenerHandleMessage().listen((MIMCMessage msg) async{
       ImMessage message = ImMessage.fromJson(json.decode(utf8.decode(base64Decode(msg.payload))));
       debugPrint("收到消息======${message.toJson()}");
       switch(message.bizType){
         case "transfer":
           _serviceUser= CustomerService.fromJson(json.decode(message.payload));
-          _prefs.setString("service_user_" + _serviceUser.id.toString(), message.payload);
-          _prefs.setInt("_customerServiceId", _serviceUser.id);
-          _prefs.setBool("_isCustomerService", true);
+          _keFuController.prefs.setString("service_user_" + _serviceUser.id.toString(), message.payload);
+          _keFuController.prefs.setInt("_customerServiceId", _serviceUser.id);
+          _keFuController.prefs.setBool("_isCustomerService", true);
           _isCustomerService = true;
-          MessageHandle msgHandle =  _createMessage(toAccount: _toAccount, msgType: "handshake", content: "与客服握握手鸭");
+          MessageHandle msgHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "handshake", content: "与客服握握手鸭");
           _sendMessage(msgHandle);
           break;
         case "end":
         case "timeout":
           _serviceUser = null;
           _isCustomerService = false;
-          _prefs.setBool("_isCustomerService", false);
-          _prefs.setInt("_customerServiceId", -1);
+          _keFuController.prefs.setBool("_isCustomerService", false);
+          _keFuController.prefs.setInt("_customerServiceId", -1);
           break;
         case "pong":
           if(_isPong) return;
@@ -190,99 +367,10 @@ class _KeFuState extends State<KeFu>{
       setState(() {});
     });
 
-  }
+    // 发送握手消息
+    MessageHandle messageHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "handshake", content: "我要对机器人问好");
+    _sendMessage(messageHandle);
 
-  /// 实例化 dio
-  Future<void> _dioInstance() async{
-    _http = Dio();
-    _http.options.baseUrl = _host;
-    _http.options.connectTimeout = 60000;
-    _http.options.receiveTimeout = 60000;
-    _http.options.headers = {};
-  }
-
-  /// 实例化 SharedPreferences
-  Future<void> _prefsInstance() async{
-    _prefs = await SharedPreferences.getInstance();
-  }
-
-  /// 注册IM账号
-  Future<void> _registerImAccount() async{
-    try {
-      int imAccount = _prefs.getInt("ImAccount") ?? 0;
-      Response response = await _http.post(_IM_REGISTER, data: {
-        "type": 0,
-        "uid": 0,
-        "platform": Platform.isIOS ? 2 : 6,
-        "account_id": imAccount
-      });
-      if (response.data["code"] == 200) {
-        _imTokenInfo = ImTokenInfo.fromJson(response.data["data"]["token"]["data"]);
-        _imUser = ImUser.fromJson(response.data["data"]["user"]);
-        _prefs.setInt("ImAccount", _imUser.id);
-        // 获取缓存记录
-        _messagesRecord = await _getLocalMessageRecord();
-        setState(() {});
-      } else {
-        // 1秒重试
-        debugPrint(response.data["error"]);
-        await Future.delayed(Duration(milliseconds: 1000));
-        _registerImAccount();
-      }
-    }catch(e){
-      debugPrint(e);
-    }
-  }
-
-  /// 获取机器人信息
-  Future<void> _getRobot() async{
-    try {
-      Response response = await _http.get(_IM_GET_ROBOT);
-      if (response.data["code"] == 200) {
-        _robot = Robot.fromJson(response.data["data"]);
-        _prefs.setString("robot_" + _robot.id.toString(), json.encode(response.data["data"]));
-      } else {
-        // 1秒重试
-        debugPrint(response.data["error"]);
-        await Future.delayed(Duration(milliseconds: 1000));
-        _getRobot();
-      }
-    }catch(e){
-      debugPrint(e);
-    }
-  }
-
-  /// 上报IM最后活动时间
-  Future<void> _upImLastActivity() async{
-    Timer.periodic(Duration(milliseconds: 20000), (_){
-      _http.get(_host + _IM_ACTIVITY + '/' + _imUser.id.toString());
-    });
-  }
-
-  /// 获取上传文件配置
-  Future<void> _getUploadSecret() async{
-    Response response = await _http.get(_host + _IM_UPLOAD_SECRET);
-    if(response.data["code"] == 200){
-      _uploadSecret = UploadSecret.fromJson(response.data["data"]);
-    }else{
-      await Future.delayed(Duration(milliseconds: 1000));
-      _getUploadSecret();
-    }
-  }
-
-  /// 获取IM 未读消息
-  Future<int> _getReadCount() async{
-    int _count = 0;
-    Response response = await _http.get(_host + _IM_GET_READ + '/' + _imUser.id.toString());
-    if(response.data["code"] == 200){
-      _count = response.data["data"];
-    }
-    return _count;
-  }
-
-  /// 清除IM未读消息
-  Future<void> _cleanRead() async{
-    await _http.get(_host + _IM_CLEAN_READ + '/' + _imUser.id.toString());
   }
 
   // 处理消息缓存并加入到list message
@@ -294,9 +382,9 @@ class _KeFuState extends State<KeFu>{
     if(isCache) {
       String bizType = msg.bizType;
       if(bizType == "welcome" || bizType == "pong") return;
-      List<String> cacheMessages = _prefs.getStringList("miniImAppMessageRecord_${_imUser.id}")  ?? [];
+      List<String> cacheMessages = _keFuController.prefs.getStringList("miniImAppMessageRecord_${_keFuController.imUser.id}")  ?? [];
       cacheMessages.add(json.encode(msg.toJson()));
-      _prefs.setStringList("miniImAppMessageRecord_${_imUser.id}", cacheMessages);
+      _keFuController.prefs.setStringList("miniImAppMessageRecord_${_keFuController.imUser.id}", cacheMessages);
     }
     setState(() {});
   }
@@ -305,7 +393,7 @@ class _KeFuState extends State<KeFu>{
   Future<List<ImMessage>> _getLocalMessageRecord() async{
     const pageSize = 15;
     List<ImMessage> _localMessages = [];
-    List<String> _localMessagesStr = _prefs.getStringList("miniImAppMessageRecord_${_imUser.id}");
+    List<String> _localMessagesStr = _keFuController.prefs.getStringList("miniImAppMessageRecord_${_keFuController.imUser.id}");
     if(_localMessagesStr != null){
       List<ImMessage> _localMessageAll = _localMessagesStr.map((i) => ImMessage.fromJson(json.decode(i))).toList();
       if(_messagesRecord.length == 0){
@@ -341,7 +429,7 @@ class _KeFuState extends State<KeFu>{
     const String defaultAvatar = 'http://qiniu.cmp520.com/avatar_default.png';
     msg.avatar = defaultAvatar;
     // 消息是我发的
-    if(msg.fromAccount == _imUser.id){
+    if(msg.fromAccount == _keFuController.imUser.id){
       /// 这里如果是接入业务平台可替换成用户头像和昵称
       /// if (uid == myUid)  msg.avatar = MyAvatar
       /// if (uid == myUid)  msg.nickname = MyNickname
@@ -351,16 +439,16 @@ class _KeFuState extends State<KeFu>{
         msg.nickname = _serviceUser.nickname ?? "客服";
         msg.avatar = _serviceUser.avatar != null && _serviceUser.avatar.isNotEmpty ? _serviceUser.avatar : defaultAvatar;
       }else{
-        String _localServiceUserStr = _prefs.getString("service_user_" + msg.fromAccount.toString());
+        String _localServiceUserStr = _keFuController.prefs.getString("service_user_" + msg.fromAccount.toString());
         if(_localServiceUserStr != null){
           CustomerService _localServiceUser = CustomerService.fromJson(json.decode(_localServiceUserStr));
           msg.nickname = _localServiceUser.nickname ?? "客服";
           msg.avatar = _localServiceUser.avatar != null && _localServiceUser.avatar.isNotEmpty ? _localServiceUser.avatar : defaultAvatar;
-        }else if(_robot != null && _robot.id == msg.fromAccount){
-          msg.nickname = _robot.nickname ?? "客服";
-          msg.avatar = _robot.avatar != null && _robot.avatar.isNotEmpty ? _robot.avatar : defaultAvatar;
+        }else if(_keFuController.robot != null && _keFuController.robot.id == msg.fromAccount){
+          msg.nickname = _keFuController.robot.nickname ?? "客服";
+          msg.avatar = _keFuController.robot.avatar != null && _keFuController.robot.avatar.isNotEmpty ? _keFuController.robot.avatar : defaultAvatar;
         }else{
-          String _localRobotStr = _prefs.getString("robot_" + msg.fromAccount.toString());
+          String _localRobotStr = _keFuController.prefs.getString("robot_" + msg.fromAccount.toString());
           if(_localRobotStr != null){
             Robot _localRobot = Robot.fromJson(json.decode(_localRobotStr));
             msg.nickname = _localRobot.nickname ?? "机器人";
@@ -376,42 +464,11 @@ class _KeFuState extends State<KeFu>{
     return msg;
   }
 
-  /// 创建消息
-  /// [toAccount] 接收方账号
-  /// [msgType]   消息类型
-  /// [content]   消息内容
-  MessageHandle _createMessage({int toAccount, String msgType, dynamic content}){
-    MIMCMessage message = MIMCMessage();
-    String millisecondsSinceEpoch = DateTime.now().millisecondsSinceEpoch.toString();
-    print(millisecondsSinceEpoch);
-    int timestamp = int.parse(millisecondsSinceEpoch.substring(0, millisecondsSinceEpoch.length - 3));
-    message.timestamp = timestamp;
-    message.bizType = msgType;
-    message.toAccount = toAccount.toString();
-    Map<String, dynamic> payloadMap = {
-      "from_account": _imUser.id,
-      "to_account": toAccount,
-      "biz_type": msgType,
-      "version": "0",
-      "key": DateTime.now().millisecondsSinceEpoch,
-      "platform": Platform.isAndroid ? 6 : 2,
-      "timestamp": timestamp,
-      "read": 0,
-      "transfer_account": 0,
-      "payload": content
-    };
-    message.payload = base64Encode(utf8.encode(json.encode(payloadMap)));
-    return MessageHandle(
-        sendMessage: message,
-        localMessage: ImMessage.fromJson(payloadMap)..isShowCancel = true
-    );
-  }
-
   /// 点击发送按钮
   void _onSubmit(){
     String content = _editingController.value.text.trim();
     if(content.isEmpty) return;
-    MessageHandle messageHandle =  _createMessage(toAccount: _toAccount, msgType: "text", content: content);
+    MessageHandle messageHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "text", content: content);
     _sendMessage(messageHandle);
     _cachePushMessage(messageHandle.localMessage);
     _editingController.clear();
@@ -419,35 +476,20 @@ class _KeFuState extends State<KeFu>{
 
   /// 发送消息
   void _sendMessage(MessageHandle msgHandle) async{
-    _flutterMimc.sendMessage(msgHandle.sendMessage);
+    _keFuController.flutterMimc.sendMessage(msgHandle.sendMessage);
     /// 消息入库（远程）
     MessageHandle cloneMsgHandle = msgHandle.clone();
     String type = cloneMsgHandle.localMessage.bizType;
     if(type == "contacts" || type == "pong" || type == "welcome" || type == "cancel" || type == "handshake") return;
-    cloneMsgHandle.sendMessage.toAccount = _robot.id.toString();
+    cloneMsgHandle.sendMessage.toAccount = _keFuController.robot.id.toString();
     cloneMsgHandle.sendMessage.payload = ImMessage(
       bizType: "into",
       payload: cloneMsgHandle.localMessage.toBase64(),
     ).toBase64();
-    _flutterMimc.sendMessage(cloneMsgHandle.sendMessage);
+   _keFuController.flutterMimc.sendMessage(cloneMsgHandle.sendMessage);
     await Future.delayed(Duration(milliseconds: 10000));
     msgHandle.localMessage.isShowCancel = false;
     setState(() {});
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    if(mounted){
-      _focusNode.addListener((){
-        if(_focusNode.hasFocus){
-          _onHideEmoJiPanel();
-          _hideFileButtons();
-          _toScrollEnd();
-        }
-      });
-      _init();
-    }
   }
 
   /// Scroll to end
@@ -473,22 +515,12 @@ class _KeFuState extends State<KeFu>{
     });
   }
 
-  @override
-  void dispose(){
-    _focusNode?.dispose();
-    _editingController?.dispose();
-    _subStatus?.cancel();
-    _subHandleMessage?.cancel();
-    super.dispose();
-  }
-
   /// EmoJiPanel
   Widget _emoJiPanel(){
     return EmoJiPanel(isShow: _isShowEmoJiPanel, onSelected: (String emoji){
       _editingController.text = _editingController.value.text + emoji;
     },);
   }
-
 
   ///  接入人工 or 结束会话
   bool _isOnHeadRightButton = false;
@@ -497,7 +529,7 @@ class _KeFuState extends State<KeFu>{
     _isOnHeadRightButton = true;
     if(_isCustomerService){
       ImUtils.alert(context, content: "您是否确认关闭本次会话？", onConfirm: (){
-        MessageHandle msgHandle =  _createMessage(toAccount: _toAccount, msgType: "end", content: "");
+        MessageHandle msgHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "end", content: "");
         _sendMessage(msgHandle);
         _cachePushMessage(msgHandle.localMessage);
         _isCustomerService = null;
@@ -522,6 +554,7 @@ class _KeFuState extends State<KeFu>{
     FocusScope.of(context).requestFocus(FocusNode());
     setState(() {});
   }
+  
   /// 隐藏文件面板
   void _hideFileButtons(){
     _isShowFileButtons = false;
@@ -540,42 +573,57 @@ class _KeFuState extends State<KeFu>{
   void _sendPhoto(File file) async{
     try {
       if(file ==null) return;
-      MessageHandle msgHandle =  _createMessage(toAccount: _toAccount, msgType: "photo", content: file.path);
+      MessageHandle msgHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "photo", content: file.path);
       _cachePushMessage(msgHandle.localMessage..isShowCancel = false);
       String filePath = file.path;
       String fileName = "${DateTime.now().microsecondsSinceEpoch}_" + (filePath.lastIndexOf('/') > -1 ? filePath.substring(filePath.lastIndexOf('/') + 1) : filePath);
 
-      /// 七牛上传
+      FormData formData = new FormData.from({
+        "fileType": "image",
+        "fileName": "file",
+        "key": fileName,
+        "token": _uploadSecret.secret,
+        "file": UploadFileInfo(file,fileName)
+      });
+
+     void uploadSuccess(url) async{
+        msgHandle.localMessage.isShowCancel = true; 
+         setState(() {});
+         String img = _uploadSecret.host + "/" + url;
+        ImMessage sendMsg = ImMessage.fromJson(json.decode(utf8.decode(base64Decode(msgHandle.sendMessage.payload))));
+        sendMsg.payload = img;
+        msgHandle.sendMessage.payload = base64Encode(utf8.encode(json.encode(sendMsg.toJson())));
+        _sendMessage(msgHandle.clone()..localMessage.payload = img);
+        await Future.delayed(Duration(milliseconds: 10000));
+        msgHandle.localMessage.isShowCancel = false;
+        setState(() {});
+     }
+
+     String uploadUrl;
+
+      /// 系统自带
       if(_uploadSecret.mode == 1){
-        FormData formData = new FormData.from({
-          "fileType": "image",
-          "fileName": "file",
-          "key": fileName,
-          "token": _uploadSecret.secret,
-          "file": UploadFileInfo(file,fileName)
-        });
-        Response response = await _http.post("https://upload.qiniup.com", data: formData, onSendProgress: (int sent, int total){
-          msgHandle.localMessage.uploadProgress = (sent/total*100).ceil();
-          setState(() {});
-        });
-        if(response.statusCode == 200){
-          msgHandle.localMessage.isShowCancel = true;
-          setState(() {});
-          String img = _uploadSecret.host + "/" + response.data["key"];
-          ImMessage sendMsg = ImMessage.fromJson(json.decode(utf8.decode(base64Decode(msgHandle.sendMessage.payload))));
-          sendMsg.payload = img;
-          msgHandle.sendMessage.payload = base64Encode(utf8.encode(json.encode(sendMsg.toJson())));
-          _sendMessage(msgHandle.clone()..localMessage.payload = img);
-          await Future.delayed(Duration(milliseconds: 10000));
-          msgHandle.localMessage.isShowCancel = false;
-          setState(() {});
-        }else{
-          _deleteMessage(msgHandle.localMessage);
-          ImUtils.alert(context, content: "图片上传失败！");
-        }
-      }else{
-        /// 其他
+        uploadUrl = KeFuController.API_UPLOAD_FILE;
       }
+      /// 七牛上传
+      else if(_uploadSecret.mode == 1){
+        uploadUrl = KeFuController.API_QINIU_UPLOAD_FILE;
+      /// 其他
+      }else{
+      }
+
+      Response response = await _keFuController.http.post(uploadUrl, data: formData, onSendProgress: (int sent, int total){
+        msgHandle.localMessage.uploadProgress = (sent/total*100).ceil();
+        setState(() {});
+      });
+      if(response.statusCode == 200){
+        uploadSuccess(response.data["key"]);
+      }else{
+        _deleteMessage(msgHandle.localMessage);
+        ImUtils.alert(context, content: "图片上传失败！");
+      }
+
+
 
     }catch(e){
       ImUtils.alert(context, content: "图片上传失败！");
@@ -669,7 +717,7 @@ class _KeFuState extends State<KeFu>{
       ImUtils.alert(context, content: "已超过撤回时间！");
       return;
     }
-    MessageHandle msgHandle =  _createMessage(toAccount: _toAccount, msgType: "cancel", content: msg.key);
+    MessageHandle msgHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "cancel", content: msg.key);
     _sendMessage(msgHandle);
     _cachePushMessage(msgHandle.localMessage);
     _deleteMessage(msg);
@@ -679,7 +727,7 @@ class _KeFuState extends State<KeFu>{
   void _deleteMessage(ImMessage msg){
     int index = _messagesRecord.indexWhere((i) => i.key == msg.key && i.fromAccount == msg.fromAccount);
     _messagesRecord.removeAt(index);
-    List<String> _messages =_prefs.getStringList("miniImAppMessageRecord_${_imUser.id}");
+    List<String> _messages = _keFuController.prefs.getStringList("miniImAppMessageRecord_${_keFuController.imUser.id}");
     if(_messages != null){
       int _messageIndex;
       for(var i =0; i<_messages.length; i++){
@@ -690,7 +738,7 @@ class _KeFuState extends State<KeFu>{
         }
       }
       _messages.removeAt(_messageIndex);
-      _prefs.setStringList("miniImAppMessageRecord_${_imUser.id}", _messages);
+      _keFuController.prefs.setStringList("miniImAppMessageRecord_${_keFuController.imUser.id}", _messages);
     }
     setState(() {});
   }
@@ -701,7 +749,7 @@ class _KeFuState extends State<KeFu>{
      if(!_isCustomerService || isSendPong) return;
      isSendPong = true;
       String content = _editingController.value.text.trim();
-     MessageHandle _msgHandle =  _createMessage(toAccount: _toAccount, msgType: "pong", content: content);
+     MessageHandle _msgHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "pong", content: content);
      _sendMessage(_msgHandle);
      await Future.delayed(Duration(milliseconds: 200));
      isSendPong = false;
@@ -853,6 +901,17 @@ class _KeFuState extends State<KeFu>{
   }
 
   @override
+  void dispose(){
+    _focusNode?.dispose();
+    _editingController?.dispose();
+    _subStatus?.cancel();
+    _subHandleMessage?.cancel();
+    _keFuController.flutterMimc?.removeEventListenerStatusChanged();
+    _keFuController.flutterMimc?.removeEventListenerHandleMessage();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -903,14 +962,14 @@ class _KeFuState extends State<KeFu>{
                               return TextMessage(
                                 message: _msg,
                                 isShowDate: isShowDate,
-                                isSelf: _msg.fromAccount == _imUser.id,
+                                isSelf: _msg.fromAccount == _keFuController.imUser.id,
                                 onCancel: () =>  _onCancelMessage(_msg),
                                 onOperation: () => _onMessageOperation(_msg),
                               );
                             case "photo":
                               return PhotoMessage(message: _msg,
                                 isShowDate: isShowDate,
-                                isSelf: _msg.fromAccount == _imUser.id,
+                                isSelf: _msg.fromAccount == _keFuController.imUser.id,
                                 onCancel: () =>  _onCancelMessage(_msg),
                                 onOperation: () =>  _onMessageOperation(_msg),
                               );
@@ -921,7 +980,7 @@ class _KeFuState extends State<KeFu>{
                             case "system":
                               return SystemMessage(
                                 message: _msg,
-                                isSelf: _msg.fromAccount == _imUser.id,
+                                isSelf: _msg.fromAccount == _keFuController.imUser.id,
                               );
                             case "knowledge":
                               return KnowledgeMessage(message: _msg, isShowDate: isShowDate, onSend: (msg){
