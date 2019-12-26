@@ -1,11 +1,11 @@
-class CustomerService {
+class ServiceUser {
   String nickname;
   String avatar;
   int id;
 
-  CustomerService({this.nickname, this.avatar, this.id});
+  ServiceUser({this.nickname, this.avatar, this.id});
 
-  CustomerService.fromJson(Map<String, dynamic> json) {
+  ServiceUser.fromJson(Map<String, dynamic> json) {
     this.nickname = json['nickname'];
     this.avatar = json['avatar'];
     this.id = json['id'];

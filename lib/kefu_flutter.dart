@@ -11,11 +11,11 @@ import 'package:flutter_mimc/flutter_mimc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 
-import 'models/customer_service.dart';
 import 'models/im_message.dart';
 import 'models/im_token_info.dart';
 import 'models/im_user.dart';
 import 'models/robot.dart';
+import 'models/service_user.dart';
 import 'models/upload_secret.dart';
 import 'utils/im_utils.dart';
 import 'widgets/cached_network_image.dart';
@@ -32,12 +32,16 @@ class KeFuController{
   static KeFuController instance;       /// KeFuController实例
 
   Dio http;                      /// http
+  ServiceUser serviceUser;   /// 客服
   ImUser imUser;                 /// IM 用户对象
   ImTokenInfo imTokenInfo;       /// IM 签名对象
   SharedPreferences prefs;       /// 缓存对象
   Robot robot;                   /// 机器人对象
   UploadSecret uploadSecret;     /// 上传配置对象
   FlutterMimc flutterMimc;       /// IM 插件对象
+  bool isService = false;        /// 是否是人工
+  List<ImMessage> messagesRecord = [];/// 聊天记录
+  bool isPong = false;       /// 显示对方输入中...
 
   /// 小米消息云配置
   static const String APP_ID = "2882303761518282099";
@@ -54,6 +58,10 @@ class KeFuController{
   static const String API_UPLOAD_SECRET = "/public/secret";      /// IM 获取上传配置
   static const String API_UPLOAD_FILE = "/public/upload";        /// IM 内置文件上传
   static const String API_QINIU_UPLOAD_FILE = "https://upload.qiniup.com";  /// IM 七牛文件上传
+
+
+  /// 消息接收方账号 机器人 或 客服
+  int get toAccount => isService && serviceUser != null ? serviceUser.id : robot.id;
 
   // 单列
   static KeFuController get getInstance{
@@ -103,10 +111,6 @@ class KeFuController{
         appSecret: APP_SECRET,
         appAccount: imUser.id.toString()
     );
-    if(flutterMimc != null){
-      flutterMimc.login();
-      debugPrint("flutterMimc实例化完成");
-    }
   }
 
   /// 注册IM账号
@@ -223,6 +227,119 @@ class KeFuController{
   }
 
 
+  /// 发送消息
+  void sendMessage(MessageHandle msgHandle) async{
+    flutterMimc.sendMessage(msgHandle.sendMessage);
+    /// 消息入库（远程）
+    MessageHandle cloneMsgHandle = msgHandle.clone();
+    String type = cloneMsgHandle.localMessage.bizType;
+    if(type == "contacts" || type == "pong" || type == "welcome" || type == "cancel" || type == "handshake") return;
+    cloneMsgHandle.sendMessage.toAccount = robot.id.toString();
+    cloneMsgHandle.sendMessage.payload = ImMessage(
+      bizType: "into",
+      payload: cloneMsgHandle.localMessage.toBase64(),
+    ).toBase64();
+    flutterMimc.sendMessage(cloneMsgHandle.sendMessage);
+    ImMessage newMsg = await _handlerMessage(cloneMsgHandle.localMessage);
+    messagesRecord.add(newMsg);
+    await Future.delayed(Duration(milliseconds: 10000));
+    msgHandle.localMessage.isShowCancel = false;
+  }
+
+
+    /// 删除消息
+  void deleteMessage(ImMessage msg){
+    int index = messagesRecord.indexWhere((i) => i.key == msg.key && i.fromAccount == msg.fromAccount);
+    messagesRecord.removeAt(index);
+  }
+
+    // 处理头像昵称
+  Future<ImMessage> _handlerMessage(ImMessage msg) async{
+    const String defaultAvatar = 'http://qiniu.cmp520.com/avatar_default.png';
+    msg.avatar = defaultAvatar;
+    // 消息是我发的
+    if(msg.fromAccount == imUser.id){
+      /// 这里如果是接入业务平台可替换成用户头像和昵称
+      /// if (uid == myUid)  msg.avatar = MyAvatar
+      /// if (uid == myUid)  msg.nickname = MyNickname
+      msg.nickname = "我";
+    }else{
+      if(serviceUser != null && serviceUser.id == msg.fromAccount){
+        msg.nickname = serviceUser.nickname ?? "客服";
+        msg.avatar = serviceUser.avatar != null && serviceUser.avatar.isNotEmpty ? serviceUser.avatar : defaultAvatar;
+      }else{
+        String _localServiceUserStr = prefs.getString("service_user_" + msg.fromAccount.toString());
+        if(_localServiceUserStr != null){
+          ServiceUser _localServiceUser = ServiceUser.fromJson(json.decode(_localServiceUserStr));
+          msg.nickname = _localServiceUser.nickname ?? "客服";
+          msg.avatar = _localServiceUser.avatar != null && _localServiceUser.avatar.isNotEmpty ? _localServiceUser.avatar : defaultAvatar;
+        }else if(robot != null && robot.id == msg.fromAccount){
+          msg.nickname = robot.nickname ?? "客服";
+          msg.avatar = robot.avatar != null && robot.avatar.isNotEmpty ? robot.avatar : defaultAvatar;
+        }else{
+          String _localRobotStr = prefs.getString("robot_" + msg.fromAccount.toString());
+          if(_localRobotStr != null){
+            Robot _localRobot = Robot.fromJson(json.decode(_localRobotStr));
+            msg.nickname = _localRobot.nickname ?? "机器人";
+            msg.avatar = _localRobot.avatar != null && _localRobot.avatar.isNotEmpty ? _localRobot.avatar : defaultAvatar;
+          }else{
+            msg.nickname ="未知";
+            msg.avatar = defaultAvatar;
+          }
+        }
+      }
+
+    }
+    return msg;
+  }
+
+    /// mimc事件监听
+  StreamSubscription _subStatus;
+  StreamSubscription _subHandleMessage;
+  void _addMimcEvent(){
+
+    /// 状态发生改变
+    _subStatus = flutterMimc.addEventListenerStatusChanged().listen((bool status) async{
+      debugPrint("状态发生改变===$status");
+    });
+
+    /// 消息监听
+    _subHandleMessage = flutterMimc.addEventListenerHandleMessage().listen((MIMCMessage msg) async{
+      ImMessage message = ImMessage.fromJson(json.decode(utf8.decode(base64Decode(msg.payload))));
+      debugPrint("收到消息======${message.toJson()}");
+      switch(message.bizType){
+        case "transfer":
+          serviceUser = ServiceUser.fromJson(json.decode(message.payload));
+          prefs.setString("service_user_${serviceUser.id}", message.payload);
+          isService = true;
+          MessageHandle msgHandle =  createMessage(toAccount: toAccount, msgType: "handshake", content: "与客服握握手鸭");
+          sendMessage(msgHandle);
+          break;
+        case "end":
+        case "timeout":
+          serviceUser = null;
+          isService = false;
+          break;
+        case "pong":
+          if(isPong) return;
+          isPong = true;
+          await Future.delayed(Duration(milliseconds: 1500));
+          isPong = false;
+          break;
+        case "cancel":
+          message.key = int.parse(message.payload);
+          deleteMessage(message);
+          break;
+      }
+      ImMessage newMsg = await _handlerMessage(message);
+      messagesRecord.add(newMsg);
+
+    });
+
+    // 登录
+    // _keFuController.flutterMimc.login();
+
+  }
 
 
 }
@@ -243,18 +360,17 @@ class _KeFuState extends State<_KeFu>{
   TextEditingController _editingController = TextEditingController();
   ScrollController _scrollController = ScrollController();
   bool _isShowEmoJiPanel = false; /// 是否显示表情面板
-  bool _isFirstConnect = true;    /// 是否是首次连线
-  bool _isCustomerService  = false;    /// 当前是否是客服连线
-  CustomerService _serviceUser;        /// 客服信息
-  List<ImMessage> _messagesRecord = [];/// 聊天记录
+  bool _isService  = false;      /// 当前是否是客服连线
   bool _isScrollEnd = false;  /// 没有更多记录了
   bool _isMorLoading = false; /// 加载更多...
-  bool _isPong = false;       /// 显示对方输入中...
   bool _isShowFileButtons = false; /// 是否显示文件按钮面板
   UploadSecret _uploadSecret;      /// 上传配置对象
 
-    @override
-   void initState(){
+  /// 消息记录
+  List<ImMessage> get messagesRecord => _keFuController.messagesRecord;
+
+  @override
+  void initState(){
     super.initState();
     if(mounted){
       _focusNode.addListener((){
@@ -268,14 +384,18 @@ class _KeFuState extends State<_KeFu>{
       /// 监听滚动条
       _scrollController?.addListener(() => _onScrollViewControllerAddListener());
 
-      /// mimc事件监听
-      _addMimcEvent();
+      // 发送握手消息
+      _keFuController.flutterMimc.isOnline().then((isLogin){
+        print("isLogin==$isLogin");
+        if(isLogin && !_isService){
+          MessageHandle messageHandle =  _keFuController.createMessage(toAccount: _keFuController.toAccount, msgType: "handshake", content: "我要对机器人问好");
+          _keFuController.sendMessage(messageHandle);
+        }
+      });
+       
 
     }
   }
-
-  /// 消息接收方账号 机器人 或 客服
-  int get _toAccount => _isCustomerService && _serviceUser != null ? _serviceUser.id : _keFuController.robot.id;
 
   // 监听滚动条
   void _onScrollViewControllerAddListener() async{
@@ -285,9 +405,9 @@ class _KeFuState extends State<_KeFu>{
       if (position.pixels + 10.0 > position.maxScrollExtent && !_isScrollEnd && !_isMorLoading) {
         _isMorLoading = true;
         await Future.delayed(Duration(milliseconds: 1000));
-        List<ImMessage> _localMessages = await _getLocalMessageRecord();
-        if(_localMessages.length <= 0)  _isScrollEnd = true;
-        _messagesRecord.insertAll(0, _localMessages);
+        // List<ImMessage> _localMessages = await _getLocalMessageRecord();
+        // if(_localMessages.length <= 0)  _isScrollEnd = true;
+        // messagesRecord.insertAll(0, _localMessages);
         _isMorLoading = false;
         setState(() {});
       }
@@ -297,199 +417,14 @@ class _KeFuState extends State<_KeFu>{
     }
   }
 
-  /// mimc事件监听
-  StreamSubscription _subStatus;
-  StreamSubscription _subHandleMessage;
-  void _addMimcEvent(){
-    if(_keFuController.flutterMimc == null){
-       debugPrint("初始化失败了");
-      return;
-    }
-    /// 状态发生改变
-    _subStatus = _keFuController.flutterMimc.addEventListenerStatusChanged().listen((bool status) async{
-      print("IM状态变更=======$status");
-      if(_keFuController.prefs.getBool("_isCustomerService") == true){
-        _isCustomerService = true;
-        int _customerServiceId = _keFuController.prefs.getInt("_customerServiceId");
-        if(_customerServiceId != null && _customerServiceId != -1){
-          String _serviceUseStr = _keFuController.prefs.getString("service_user_$_customerServiceId");
-          if(_serviceUseStr != null){
-            _serviceUser= CustomerService.fromJson(json.decode(_serviceUseStr));
-          }else{
-            _isCustomerService = false;
-          }
-        }
-      }
-      if(_isFirstConnect && status && !_isCustomerService){
-        _isFirstConnect = false;
-        // 发送握手消息
-        MessageHandle messageHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "handshake", content: "我要对机器人问好");
-        _sendMessage(messageHandle);
-      }
-      setState(() {});
-    });
-
-    /// 消息监听
-    _subHandleMessage = _keFuController.flutterMimc.addEventListenerHandleMessage().listen((MIMCMessage msg) async{
-      ImMessage message = ImMessage.fromJson(json.decode(utf8.decode(base64Decode(msg.payload))));
-      debugPrint("收到消息======${message.toJson()}");
-      switch(message.bizType){
-        case "transfer":
-          _serviceUser= CustomerService.fromJson(json.decode(message.payload));
-          _keFuController.prefs.setString("service_user_" + _serviceUser.id.toString(), message.payload);
-          _keFuController.prefs.setInt("_customerServiceId", _serviceUser.id);
-          _keFuController.prefs.setBool("_isCustomerService", true);
-          _isCustomerService = true;
-          MessageHandle msgHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "handshake", content: "与客服握握手鸭");
-          _sendMessage(msgHandle);
-          break;
-        case "end":
-        case "timeout":
-          _serviceUser = null;
-          _isCustomerService = false;
-          _keFuController.prefs.setBool("_isCustomerService", false);
-          _keFuController.prefs.setInt("_customerServiceId", -1);
-          break;
-        case "pong":
-          if(_isPong) return;
-          _isPong = true;
-          setState(() {});
-          await Future.delayed(Duration(milliseconds: 1500));
-          _isPong = false;
-          break;
-        case "cancel":
-          message.key = int.parse(message.payload);
-          _deleteMessage(message);
-          break;
-      }
-      _cachePushMessage(message);
-      if(message.bizType != "pong") _toScrollEnd();
-      setState(() {});
-    });
-
-    // 发送握手消息
-    MessageHandle messageHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "handshake", content: "我要对机器人问好");
-    _sendMessage(messageHandle);
-
-  }
-
-  // 处理消息缓存并加入到list message
-  void _cachePushMessage(ImMessage msg, {bool isCache = true, bool isMemoryCache = true}) async{
-    if(isMemoryCache){
-      ImMessage newMsg = await _handlerMessage(msg);
-      _messagesRecord.add(newMsg);
-    }
-    if(isCache) {
-      String bizType = msg.bizType;
-      if(bizType == "welcome" || bizType == "pong") return;
-      List<String> cacheMessages = _keFuController.prefs.getStringList("miniImAppMessageRecord_${_keFuController.imUser.id}")  ?? [];
-      cacheMessages.add(json.encode(msg.toJson()));
-      _keFuController.prefs.setStringList("miniImAppMessageRecord_${_keFuController.imUser.id}", cacheMessages);
-    }
-    setState(() {});
-  }
-
-  // 获取本地缓存消息
-  Future<List<ImMessage>> _getLocalMessageRecord() async{
-    const pageSize = 15;
-    List<ImMessage> _localMessages = [];
-    List<String> _localMessagesStr = _keFuController.prefs.getStringList("miniImAppMessageRecord_${_keFuController.imUser.id}");
-    if(_localMessagesStr != null){
-      List<ImMessage> _localMessageAll = _localMessagesStr.map((i) => ImMessage.fromJson(json.decode(i))).toList();
-      if(_messagesRecord.length == 0){
-        _localMessages = _localMessageAll.sublist(_localMessageAll.length <= pageSize ? 0 :  _localMessageAll.length - pageSize, _localMessageAll.length);
-      }else{
-        var lastIndex;
-        for(int i = _localMessageAll.length - 1; i >= 0; i--){
-          if(_localMessageAll[i].timestamp == _messagesRecord[0].timestamp){
-            lastIndex = i;
-            break;
-          }
-        }
-        if(lastIndex == null || lastIndex == 1){
-          return [];
-        }
-        if(lastIndex <= pageSize){
-          _localMessages = _localMessageAll.sublist(0, lastIndex);
-        }else{
-          _localMessages = _localMessageAll.sublist(lastIndex - pageSize, lastIndex);
-        }
-      }
-    }
-    for(int b = 0; b<_localMessages.length; b++){
-      ImMessage msg = _localMessages[b];
-      msg.isShowCancel = false;
-      _localMessages[b] = await _handlerMessage(msg);
-    }
-    return _localMessages;
-  }
-
-  // 处理头像昵称
-  Future<ImMessage> _handlerMessage(ImMessage msg) async{
-    const String defaultAvatar = 'http://qiniu.cmp520.com/avatar_default.png';
-    msg.avatar = defaultAvatar;
-    // 消息是我发的
-    if(msg.fromAccount == _keFuController.imUser.id){
-      /// 这里如果是接入业务平台可替换成用户头像和昵称
-      /// if (uid == myUid)  msg.avatar = MyAvatar
-      /// if (uid == myUid)  msg.nickname = MyNickname
-      msg.nickname = "我";
-    }else{
-      if(_serviceUser != null && _serviceUser.id == msg.fromAccount){
-        msg.nickname = _serviceUser.nickname ?? "客服";
-        msg.avatar = _serviceUser.avatar != null && _serviceUser.avatar.isNotEmpty ? _serviceUser.avatar : defaultAvatar;
-      }else{
-        String _localServiceUserStr = _keFuController.prefs.getString("service_user_" + msg.fromAccount.toString());
-        if(_localServiceUserStr != null){
-          CustomerService _localServiceUser = CustomerService.fromJson(json.decode(_localServiceUserStr));
-          msg.nickname = _localServiceUser.nickname ?? "客服";
-          msg.avatar = _localServiceUser.avatar != null && _localServiceUser.avatar.isNotEmpty ? _localServiceUser.avatar : defaultAvatar;
-        }else if(_keFuController.robot != null && _keFuController.robot.id == msg.fromAccount){
-          msg.nickname = _keFuController.robot.nickname ?? "客服";
-          msg.avatar = _keFuController.robot.avatar != null && _keFuController.robot.avatar.isNotEmpty ? _keFuController.robot.avatar : defaultAvatar;
-        }else{
-          String _localRobotStr = _keFuController.prefs.getString("robot_" + msg.fromAccount.toString());
-          if(_localRobotStr != null){
-            Robot _localRobot = Robot.fromJson(json.decode(_localRobotStr));
-            msg.nickname = _localRobot.nickname ?? "机器人";
-            msg.avatar = _localRobot.avatar != null && _localRobot.avatar.isNotEmpty ? _localRobot.avatar : defaultAvatar;
-          }else{
-            msg.nickname ="未知";
-            msg.avatar = defaultAvatar;
-          }
-        }
-      }
-
-    }
-    return msg;
-  }
 
   /// 点击发送按钮
   void _onSubmit(){
     String content = _editingController.value.text.trim();
     if(content.isEmpty) return;
-    MessageHandle messageHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "text", content: content);
-    _sendMessage(messageHandle);
-    _cachePushMessage(messageHandle.localMessage);
+    MessageHandle messageHandle =  _keFuController.createMessage(toAccount: _keFuController.toAccount, msgType: "text", content: content);
+    _keFuController.sendMessage(messageHandle);
     _editingController.clear();
-  }
-
-  /// 发送消息
-  void _sendMessage(MessageHandle msgHandle) async{
-    _keFuController.flutterMimc.sendMessage(msgHandle.sendMessage);
-    /// 消息入库（远程）
-    MessageHandle cloneMsgHandle = msgHandle.clone();
-    String type = cloneMsgHandle.localMessage.bizType;
-    if(type == "contacts" || type == "pong" || type == "welcome" || type == "cancel" || type == "handshake") return;
-    cloneMsgHandle.sendMessage.toAccount = _keFuController.robot.id.toString();
-    cloneMsgHandle.sendMessage.payload = ImMessage(
-      bizType: "into",
-      payload: cloneMsgHandle.localMessage.toBase64(),
-    ).toBase64();
-   _keFuController.flutterMimc.sendMessage(cloneMsgHandle.sendMessage);
-    await Future.delayed(Duration(milliseconds: 10000));
-    msgHandle.localMessage.isShowCancel = false;
-    setState(() {});
   }
 
   /// Scroll to end
@@ -527,13 +462,11 @@ class _KeFuState extends State<_KeFu>{
   _onHeadRightButton() async{
     if(_isOnHeadRightButton) return;
     _isOnHeadRightButton = true;
-    if(_isCustomerService){
+    if(_isService){
       ImUtils.alert(context, content: "您是否确认关闭本次会话？", onConfirm: (){
-        MessageHandle msgHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "end", content: "");
-        _sendMessage(msgHandle);
-        _cachePushMessage(msgHandle.localMessage);
-        _isCustomerService = null;
-        _isCustomerService = false;
+        MessageHandle msgHandle =  _keFuController.createMessage(toAccount: _keFuController.toAccount, msgType: "end", content: "");
+        _keFuController.sendMessage(msgHandle);
+       _keFuController.isService = false;
         setState(() {});
       });
       await Future.delayed(Duration(milliseconds: 1000));
@@ -640,7 +573,7 @@ class _KeFuState extends State<_KeFu>{
       return CupertinoDialogAction(
         child: const Text('删除'),
         onPressed: () {
-          _deleteMessage(message);
+          _keFuController.deleteMessage(message);
           Navigator.pop(context);
         },
       );
@@ -717,36 +650,15 @@ class _KeFuState extends State<_KeFu>{
       ImUtils.alert(context, content: "已超过撤回时间！");
       return;
     }
-    MessageHandle msgHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "cancel", content: msg.key);
-    _sendMessage(msgHandle);
-    _cachePushMessage(msgHandle.localMessage);
-    _deleteMessage(msg);
-  }
-
-  /// 删除消息
-  void _deleteMessage(ImMessage msg){
-    int index = _messagesRecord.indexWhere((i) => i.key == msg.key && i.fromAccount == msg.fromAccount);
-    _messagesRecord.removeAt(index);
-    List<String> _messages = _keFuController.prefs.getStringList("miniImAppMessageRecord_${_keFuController.imUser.id}");
-    if(_messages != null){
-      int _messageIndex;
-      for(var i =0; i<_messages.length; i++){
-        ImMessage m = ImMessage.fromJson(json.decode(_messages[i]));
-        if(m.key == msg.key){
-          _messageIndex = i;
-          break;
-        }
-      }
-      _messages.removeAt(_messageIndex);
-      _keFuController.prefs.setStringList("miniImAppMessageRecord_${_keFuController.imUser.id}", _messages);
-    }
-    setState(() {});
+    MessageHandle msgHandle =  _keFuController.createMessage(toAccount: _keFuController.toAccount, msgType: "cancel", content: msg.key);
+    _keFuController.sendMessage(msgHandle);
+    _keFuController.deleteMessage(msg);
   }
 
   // 消息内容变
   bool isSendPong = false;
   void _inputOnChanged(String value) async{
-     if(!_isCustomerService || isSendPong) return;
+     if(!_isService || isSendPong) return;
      isSendPong = true;
       String content = _editingController.value.text.trim();
      MessageHandle _msgHandle =  _keFuController.createMessage(toAccount: _toAccount, msgType: "pong", content: content);
@@ -904,8 +816,6 @@ class _KeFuState extends State<_KeFu>{
   void dispose(){
     _focusNode?.dispose();
     _editingController?.dispose();
-    _subStatus?.cancel();
-    _subHandleMessage?.cancel();
     _keFuController.flutterMimc?.removeEventListenerStatusChanged();
     _keFuController.flutterMimc?.removeEventListenerHandleMessage();
     super.dispose();
@@ -916,9 +826,9 @@ class _KeFuState extends State<_KeFu>{
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
-        title: Text(_isPong ? "对方正在输入..." : '在线客服'),
+        title: Text(_keFuController.isPong ? "对方正在输入..." : '在线客服'),
         actions: <Widget>[
-          _isCustomerService ?
+          _isService ?
           FlatButton(
             child: Text("结束会话", style: TextStyle(color: Colors.white),),
             onPressed: _onHeadRightButton,
@@ -947,12 +857,12 @@ class _KeFuState extends State<_KeFu>{
                     sliver: SliverList(
                         delegate: SliverChildBuilderDelegate((ctx, i){
 
-                          int index = _messagesRecord.length - i - 1;
-                          ImMessage  _msg = _messagesRecord[index];
+                          int index = messagesRecord.length - i - 1;
+                          ImMessage  _msg = messagesRecord[index];
 
                            /// 判断是否需要显示时间
                           bool isShowDate = false;
-                          if(i == _messagesRecord.length-1 || (_msg.timestamp-120) > _messagesRecord[index-1].timestamp){
+                          if(i == messagesRecord.length-1 || (_msg.timestamp-120) > messagesRecord[index-1].timestamp){
                             isShowDate = true;
                           }
 
@@ -990,7 +900,7 @@ class _KeFuState extends State<_KeFu>{
                             default:
                               return SizedBox();
                           }
-                        },childCount: _messagesRecord.length)
+                        },childCount: messagesRecord.length)
                     ),
                   ),
                   SliverToBoxAdapter(
