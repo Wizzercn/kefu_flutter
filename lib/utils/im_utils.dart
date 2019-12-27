@@ -21,7 +21,19 @@ class ImUtils{
     if(dayC>=1){
       result= "${date.year}-${date.month < 10 ? "0" + date.month.toString() : date.month}-${date.day < 10 ? "0" + date.day.toString() : date.day} ${date.hour}:${date.minute < 10 ? "0" + date.minute.toString() : date.minute}";
     }else{
-      result= "${date.hour}:${date.minute < 10 ? "0" + date.minute.toString() : date.minute}";
+      String firstString = "";
+      if(date.hour > 1 && date.hour <= 6){
+        firstString = "凌晨 ";
+      }else if(date.hour > 6 && date.hour <= 11){
+        firstString = "早上 ";
+      }else if(date.hour > 11 && date.hour <= 12){
+        firstString = "中午 ";
+      }else if(date.hour > 12 && date.hour <= 18){
+        firstString = "下午 ";
+      }else if(date.hour > 18 && date.hour <= 23){
+        firstString = "晚上 ";
+      }
+      result= firstString + "${date.hour}:${date.minute < 10 ? "0" + date.minute.toString() : date.minute}";
     }
     return result;
   }

@@ -4,11 +4,10 @@ import 'date_widget.dart';
 import 'im_avatar.dart';
 
 class TextMessage extends StatelessWidget{
-  TextMessage({this.message, this.onCancel, this.onOperation, this.isSelf, this.isShowDate = false});
+  TextMessage({this.message, this.onCancel, this.onOperation, this.isSelf});
   final ImMessage message;
   final VoidCallback onCancel;
   final VoidCallback onOperation;
-  final bool isShowDate;
   final bool isSelf;
   @override
   Widget build(BuildContext context) {
@@ -38,7 +37,7 @@ class TextMessage extends StatelessWidget{
 
     Widget msgWidget(){
       return Container(
-      margin: EdgeInsets.only(bottom: 25.0),
+      margin: EdgeInsets.only(bottom: 15.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: isSelf ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -97,7 +96,7 @@ class TextMessage extends StatelessWidget{
     return Column(
       children: <Widget>[
         Offstage(
-          offstage: !isShowDate,
+          offstage: !message.isShowDate,
           child: DateWidget(date: message.timestamp,),
         ),
         msgWidget()

@@ -3,17 +3,15 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_advanced_networkimage/zoomable.dart';
 import '../models/im_message.dart';
-import '../utils/im_utils.dart';
 import 'cached_network_image.dart';
 import 'date_widget.dart';
 import 'im_avatar.dart';
 
 class PhotoMessage extends StatelessWidget{
-  PhotoMessage({this.message, this.onCancel, this.onOperation, this.isSelf, this.isShowDate = false});
+  PhotoMessage({this.message, this.onCancel, this.onOperation, this.isSelf});
   final ImMessage message;
   final VoidCallback onCancel;
   final VoidCallback onOperation;
-  final bool isShowDate;
   final bool isSelf;
   @override
   Widget build(BuildContext context) {
@@ -66,7 +64,7 @@ class PhotoMessage extends StatelessWidget{
 
     Widget msgWidget(){
       return Container(
-      margin: EdgeInsets.only(bottom: 25.0),
+      margin: EdgeInsets.only(bottom: 15.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: isSelf ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -135,7 +133,7 @@ class PhotoMessage extends StatelessWidget{
     return Column(
       children: <Widget>[
         Offstage(
-          offstage: !isShowDate,
+          offstage: !message.isShowDate,
           child: DateWidget(date: message.timestamp,),
         ),
         msgWidget()

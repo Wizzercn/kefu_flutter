@@ -9,7 +9,7 @@ class SystemMessage extends StatelessWidget{
   Widget build(BuildContext context) {
 
     return Padding(
-      padding: EdgeInsets.only(bottom: 20.0),
+      padding: EdgeInsets.only(bottom: 15.0),
       child: Container(
         height: 23.0,
         width: double.infinity,

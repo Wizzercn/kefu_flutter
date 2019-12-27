@@ -43,43 +43,51 @@ class MessageHandle {
 
 /// KeFuStore
 class KeFuStore with ChangeNotifier {
+  /// KeFuStore实例
   static KeFuStore instance;
 
-  /// KeFuStore实例
-
+  /// http
   Dio http;
 
-  /// http
+  /// 客服信息
   ServiceUser serviceUser;
 
-  /// 客服
+  /// IM 用户对象
   ImUser imUser;
 
-  /// IM 用户对象
+  /// IM 签名对象
   ImTokenInfo imTokenInfo;
 
-  /// IM 签名对象
+  /// 缓存对象
   SharedPreferences prefs;
 
-  /// 缓存对象
+  /// 机器人对象
   Robot robot;
 
-  /// 机器人对象
+  /// 上传配置对象
   UploadSecret uploadSecret;
 
-  /// 上传配置对象
+  /// IM 插件对象
   FlutterMimc flutterMimc;
 
-  /// IM 插件对象
+  /// 是否是人工
   bool isService = false;
 
-  /// 是否是人工
+  /// 聊天记录
   List<ImMessage> messagesRecord = [];
 
-  /// 聊天记录
+  /// 显示对方输入中...
   bool isPong = false;
 
-  /// 显示对方输入中...
+  /// 没有更多记录了
+  bool isScrollEnd = false;
+
+  /// 加载更多...
+  bool isMorLoading = false;
+
+
+  // 滚动条控制器
+  ScrollController scrollController = ScrollController();
 
   /// 小米消息云配置
   static const String APP_ID = "2882303761518282099";
@@ -89,31 +97,29 @@ class KeFuStore with ChangeNotifier {
   /// API 接口
   static const String API_HOST = "http://kf.aissz.com:666/v1";
 
-  /// IM 后台网关
+  /// IM 注册初始化IM账号
   static const String API_REGISTER = "/public/register";
 
-  /// IM 注册初始化IM账号
+  /// IM 上报最后活动时间 /uid
   static const String API_ACTIVITY = "/public/activity";
 
-  /// IM 上报最后活动时间 /uid
+  /// IM 获取机器人      /platform
   static const String API_GET_ROBOT = "/public/robot/1";
 
-  /// IM 获取机器人      /platform
+  /// IM 获取未读消息    /uid
   static const String API_GET_READ = "/public/read";
 
-  /// IM 获取未读消息    /uid
+  /// IM 清除未读消息    /uid
   static const String API_CLEAN_READ = "/public/clean_read";
 
-  /// IM 清除未读消息    /uid
+  /// IM 获取上传配置
   static const String API_UPLOAD_SECRET = "/public/secret";
 
-  /// IM 获取上传配置
+  /// IM 内置文件上传
   static const String API_UPLOAD_FILE = "/public/upload";
 
-  /// IM 内置文件上传
-  static const String API_QINIU_UPLOAD_FILE = "https://upload.qiniup.com";
-
   /// IM 七牛文件上传
+  static const String API_QINIU_UPLOAD_FILE = "https://upload.qiniup.com";
 
   /// 消息接收方账号 机器人 或 客服
   int get toAccount =>
@@ -143,6 +149,7 @@ class KeFuStore with ChangeNotifier {
     await _getRobot();
     await _flutterMimcInstance();
     _addMimcEvent();
+    
   }
 
   // 获取客服View页面
@@ -263,7 +270,6 @@ class KeFuStore with ChangeNotifier {
     MIMCMessage message = MIMCMessage();
     String millisecondsSinceEpoch =
         DateTime.now().millisecondsSinceEpoch.toString();
-    print(millisecondsSinceEpoch);
     int timestamp = int.parse(
         millisecondsSinceEpoch.substring(0, millisecondsSinceEpoch.length - 3));
     message.timestamp = timestamp;
@@ -290,14 +296,12 @@ class KeFuStore with ChangeNotifier {
   /// 发送消息
   void sendMessage(MessageHandle msgHandle) async {
     flutterMimc.sendMessage(msgHandle.sendMessage);
-
     /// 消息入库（远程）
     MessageHandle cloneMsgHandle = msgHandle.clone();
     String type = cloneMsgHandle.localMessage.bizType;
     if (type == "contacts" ||
         type == "pong" ||
         type == "welcome" ||
-        type == "cancel" ||
         type == "handshake") return;
     cloneMsgHandle.sendMessage.toAccount = robot.id.toString();
     cloneMsgHandle.sendMessage.payload = ImMessage(
@@ -306,9 +310,18 @@ class KeFuStore with ChangeNotifier {
     ).toBase64();
     flutterMimc.sendMessage(cloneMsgHandle.sendMessage);
     ImMessage newMsg = await _handlerMessage(cloneMsgHandle.localMessage);
-    messagesRecord.add(newMsg);
+    if(type != "photo")messagesRecord.add(newMsg);
+    notifyListeners();
     await Future.delayed(Duration(milliseconds: 10000));
-    msgHandle.localMessage.isShowCancel = false;
+    newMsg.isShowCancel = false;
+    notifyListeners();
+  }
+
+  // 更新某个消息
+  void updateMessage(ImMessage msg){
+    int index = messagesRecord.indexWhere((i) => i.key == msg.key);
+    messagesRecord[index] = msg;
+    notifyListeners();
   }
 
   /// 删除消息
@@ -316,6 +329,7 @@ class KeFuStore with ChangeNotifier {
     int index = messagesRecord.indexWhere(
         (i) => i.key == msg.key && i.fromAccount == msg.fromAccount);
     messagesRecord.removeAt(index);
+    notifyListeners();
   }
 
   // 处理头像昵称
@@ -375,9 +389,16 @@ class KeFuStore with ChangeNotifier {
   StreamSubscription _subHandleMessage;
   void _addMimcEvent() {
     /// 状态发生改变
-    _subStatus =
-        flutterMimc.addEventListenerStatusChanged().listen((bool status) async {
-      debugPrint("状态发生改变===$status");
+    _subStatus = flutterMimc.addEventListenerStatusChanged().listen((bool isLogin) async {
+      debugPrint("状态发生改变===$isLogin");
+      // 发送握手消息
+      if (isLogin && !isService) {
+        MessageHandle messageHandle = createMessage(
+            toAccount: toAccount,
+            msgType: "handshake",
+            content: "我要对机器人问好");
+        sendMessage(messageHandle);
+      }
     });
 
     /// 消息监听
@@ -400,12 +421,15 @@ class KeFuStore with ChangeNotifier {
         case "timeout":
           serviceUser = null;
           isService = false;
+          notifyListeners();
           break;
         case "pong":
           if (isPong) return;
           isPong = true;
+          notifyListeners();
           await Future.delayed(Duration(milliseconds: 1500));
           isPong = false;
+          notifyListeners();
           break;
         case "cancel":
           message.key = int.parse(message.payload);
@@ -425,8 +449,10 @@ class KeFuStore with ChangeNotifier {
   void sendPhoto(File file) async {
     try {
       if (file == null) return;
-      MessageHandle msgHandle = createMessage(
-          toAccount: toAccount, msgType: "photo", content: file.path);
+      MessageHandle msgHandle = createMessage(toAccount: toAccount, msgType: "photo", content: file.path);
+      messagesRecord.add(msgHandle.localMessage);
+      notifyListeners();
+
       String filePath = file.path;
       String fileName = "${DateTime.now().microsecondsSinceEpoch}_" +
           (filePath.lastIndexOf('/') > -1
@@ -436,20 +462,20 @@ class KeFuStore with ChangeNotifier {
       FormData formData = new FormData.from({
         "fileType": "image",
         "fileName": "file",
+        "file_name": fileName,
         "key": fileName,
         "token": uploadSecret.secret,
         "file": UploadFileInfo(file, fileName)
       });
 
       void uploadSuccess(url) async {
-        msgHandle.localMessage.isShowCancel = true;
-        notifyListeners();
         String img = uploadSecret.host + "/" + url;
-        ImMessage sendMsg = ImMessage.fromJson(json
-            .decode(utf8.decode(base64Decode(msgHandle.sendMessage.payload))));
+        msgHandle.localMessage.isShowCancel = true;
+        msgHandle.localMessage.payload = img;
+        notifyListeners();
+        ImMessage sendMsg = ImMessage.fromJson(json.decode(utf8.decode(base64Decode(msgHandle.sendMessage.payload))));
         sendMsg.payload = img;
-        msgHandle.sendMessage.payload =
-            base64Encode(utf8.encode(json.encode(sendMsg.toJson())));
+        msgHandle.sendMessage.payload = base64Encode(utf8.encode(json.encode(sendMsg.toJson())));
         sendMessage(msgHandle.clone()..localMessage.payload = img);
         await Future.delayed(Duration(milliseconds: 10000));
         msgHandle.localMessage.isShowCancel = false;
@@ -464,7 +490,7 @@ class KeFuStore with ChangeNotifier {
       }
 
       /// 七牛上传
-      else if (uploadSecret.mode == 1) {
+      else if (uploadSecret.mode == 2) {
         uploadUrl = API_QINIU_UPLOAD_FILE;
 
         /// 其他
@@ -472,21 +498,28 @@ class KeFuStore with ChangeNotifier {
 
       Response response = await http.post(uploadUrl, data: formData,
           onSendProgress: (int sent, int total) {
-        msgHandle.localMessage.uploadProgress = (sent / total * 100).ceil();
+          msgHandle.localMessage.uploadProgress = (sent / total * 100).ceil();
+          notifyListeners();
       });
+
       if (response.statusCode == 200) {
-        uploadSuccess(response.data["key"]);
+        switch(uploadSecret.mode){
+          case 1:
+            uploadSuccess(response.data["data"]);
+            break;
+          case 2:
+            uploadSuccess(response.data["key"]);
+            break;
+        }
       } else {
         deleteMessage(msgHandle.localMessage);
-        MessageHandle systemMsgHandle = createMessage(
-            toAccount: toAccount, msgType: "system", content: "图片上传失败！");
+        MessageHandle systemMsgHandle = createMessage(toAccount: toAccount, msgType: "system", content: "图片上传失败！");
         sendMessage(systemMsgHandle);
       }
     } catch (e) {
-      MessageHandle systemMsgHandle = createMessage(
-          toAccount: toAccount, msgType: "system", content: "图片上传失败！");
+      MessageHandle systemMsgHandle = createMessage(toAccount: toAccount, msgType: "system", content: "图片上传失败！");
       sendMessage(systemMsgHandle);
-      debugPrint(e);
+      debugPrint("图片上传失败！ =======$e");
     }
   }
 
@@ -502,6 +535,15 @@ class KeFuStore with ChangeNotifier {
     isSendPong = false;
     notifyListeners();
   }
+
+  @override
+  void dispose() {
+    _subStatus?.cancel();
+    _subHandleMessage?.cancel();
+    scrollController?.dispose();
+    super.dispose();
+  }
+
 }
 
 /// MiNiIm screen
@@ -512,29 +554,18 @@ class _KeFu extends StatefulWidget {
 
 /// im screen state
 class _KeFuState extends State<_KeFu> {
+
+  /// 客服store
   KeFuStore _keFuStore = KeFuStore.getInstance;
 
-  /// 客服控制
-
-  FocusNode _focusNode = FocusNode();
-  TextEditingController _editingController = TextEditingController();
-  ScrollController _scrollController = ScrollController();
+  /// 是否显示表情面板
   bool _isShowEmoJiPanel = false;
 
-  /// 是否显示表情面板
-  bool _isScrollEnd = false;
+  /// 输入键盘相关
+  FocusNode _focusNode = FocusNode();
+  TextEditingController _editingController = TextEditingController();
 
-  /// 没有更多记录了
-  bool _isMorLoading = false;
-
-  /// 加载更多...
-  bool _isShowFileButtons = false;
-
-  /// 是否显示文件按钮面板
-  UploadSecret _uploadSecret;
-
-  /// 上传配置对象
-
+  /// 初始化生命周期
   @override
   void initState() {
     super.initState();
@@ -542,43 +573,43 @@ class _KeFuState extends State<_KeFu> {
       _focusNode.addListener(() {
         if (_focusNode.hasFocus) {
           _onHideEmoJiPanel();
-          _hideFileButtons();
           _toScrollEnd();
         }
       });
 
       /// 监听滚动条
-      _scrollController
-          ?.addListener(() => _onScrollViewControllerAddListener());
+      _keFuStore.scrollController.addListener(() => _onScrollViewControllerAddListener());
 
-      // 发送握手消息
-      _keFuStore.flutterMimc.isOnline().then((isLogin) {
-        if (isLogin && !_keFuStore.isService) {
-          MessageHandle messageHandle = _keFuStore.createMessage(
-            toAccount: _keFuStore.toAccount,
-            msgType: "handshake",
-            content: "我要对机器人问好");
-          _keFuStore.sendMessage(messageHandle);
-        }
-      });
+      // 监听消息
+      _addEventMessage();
+
     }
+  }
+
+  /// 监听接收消息
+  void _addEventMessage(){
+    _keFuStore.flutterMimc.addEventListenerHandleMessage().listen((MIMCMessage msg){
+
+      // 滚动条置底
+      _toScrollEnd();
+
+    });
   }
 
   // 监听滚动条
   void _onScrollViewControllerAddListener() async {
     try {
-      ScrollPosition position = _scrollController.position;
+      ScrollPosition position = _keFuStore.scrollController.position;
       // 判断是否到底部
       if (position.pixels + 10.0 > position.maxScrollExtent &&
-          !_isScrollEnd &&
-          !_isMorLoading) {
-        _isMorLoading = true;
+          !_keFuStore.isScrollEnd &&
+          !_keFuStore.isMorLoading) {
+        _keFuStore.isMorLoading = true;
         await Future.delayed(Duration(milliseconds: 1000));
         // List<ImMessage> _localMessages = await _getLocalMessageRecord();
         // if(_localMessages.length <= 0)  _isScrollEnd = true;
         // messagesRecord.insertAll(0, _localMessages);
-        _isMorLoading = false;
-        setState(() {});
+        _keFuStore.isMorLoading = false;
       }
     } catch (e) {
       debugPrint(e);
@@ -589,16 +620,20 @@ class _KeFuState extends State<_KeFu> {
   void _onSubmit() {
     String content = _editingController.value.text.trim();
     if (content.isEmpty) return;
-    MessageHandle messageHandle = _keFuStore.createMessage(
-        toAccount: _keFuStore.toAccount, msgType: "text", content: content);
+    MessageHandle messageHandle = _keFuStore.createMessage(toAccount: _keFuStore.toAccount, msgType: "text", content: content);
     _keFuStore.sendMessage(messageHandle);
     _editingController.clear();
+    _toScrollEnd();
   }
 
   /// Scroll to end
   void _toScrollEnd() async {
     await Future.delayed(Duration(milliseconds: 100));
-    _scrollController.jumpTo(0);
+    if(!mounted){
+      _toScrollEnd();
+      return;
+    }
+    _keFuStore.scrollController?.jumpTo(0);
   }
 
   /// onShowEmoJiPanel
@@ -608,7 +643,6 @@ class _KeFuState extends State<_KeFu> {
     setState(() {
       _isShowEmoJiPanel = true;
     });
-    _hideFileButtons();
   }
 
   /// onHideEmoJiPanel
@@ -652,23 +686,8 @@ class _KeFuState extends State<_KeFu> {
     _isOnHeadRightButton = false;
   }
 
-  /// 显示文件面板
-  void _showFileButtons() {
-    _isShowFileButtons = true;
-    _onHideEmoJiPanel();
-    FocusScope.of(context).requestFocus(FocusNode());
-    setState(() {});
-  }
-
-  /// 隐藏文件面板
-  void _hideFileButtons() {
-    _isShowFileButtons = false;
-    setState(() {});
-  }
-
   /// 选择图片文件
   void _getImage(ImageSource source) async {
-    _hideFileButtons();
     File _file = await ImagePicker.pickImage(source: source, maxWidth: 2000);
     if (_file == null) return;
     _keFuStore.sendPhoto(_file);
@@ -765,7 +784,8 @@ class _KeFuState extends State<_KeFu> {
       debugPrint("已超过撤回时间！");
       return;
     }
-    MessageHandle msgHandle = _keFuStore.createMessage(toAccount: _keFuStore.toAccount, msgType: "cancel", content: msg.key);
+    MessageHandle msgHandle = _keFuStore.createMessage(
+        toAccount: _keFuStore.toAccount, msgType: "cancel", content: msg.key);
     _keFuStore.sendMessage(msgHandle);
     _keFuStore.deleteMessage(msg);
   }
@@ -788,103 +808,43 @@ class _KeFuState extends State<_KeFu> {
       ),
       child: Column(
         children: <Widget>[
-          Offstage(
-            offstage: !_isShowFileButtons,
-            child: Column(
-              children: <Widget>[
-                Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.symmetric(vertical: 10.0),
-                  color: Colors.white,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: <Widget>[
-                      GestureDetector(
-                          onTap: () => _getImage(ImageSource.gallery),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: <Widget>[
-                              Container(
-                                margin: EdgeInsets.only(bottom: 3.0),
-                                padding: EdgeInsets.all(8.0),
-                                decoration: BoxDecoration(
-                                    color: Colors.blue,
-                                    borderRadius:
-                                        BorderRadius.all(Radius.circular(5.0))),
-                                child: Icon(
-                                  Icons.image,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              Text(
-                                "相册",
-                                style: TextStyle(
-                                    color: Colors.black54, fontSize: 13.0),
-                              )
-                            ],
-                          )),
-                      VerticalDivider(
-                        width: 15.0,
-                        color: Colors.transparent,
-                      ),
-                      GestureDetector(
-                          onTap: () => _getImage(ImageSource.camera),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: <Widget>[
-                              Container(
-                                margin: EdgeInsets.only(bottom: 3.0),
-                                padding: EdgeInsets.all(8.0),
-                                decoration: BoxDecoration(
-                                    color: Colors.blue,
-                                    borderRadius:
-                                        BorderRadius.all(Radius.circular(5.0))),
-                                child: Icon(
-                                  Icons.camera_alt,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              Text(
-                                "相机",
-                                style: TextStyle(
-                                    color: Colors.black54, fontSize: 13.0),
-                              )
-                            ],
-                          )),
-                    ],
-                  ),
-                ),
-                Divider()
-              ],
-            ),
-          ),
           SizedBox(
             child: Row(
               children: <Widget>[
-                GestureDetector(
-                    child: Container(
-                      padding: EdgeInsets.all(3.0),
-                      child: Icon(
-                        Icons.add_circle_outline,
-                        color: Colors.black26,
-                        size: 25,
-                      ),
-                    ),
-                    onTap: _isShowFileButtons
-                        ? _hideFileButtons
-                        : _showFileButtons),
                 GestureDetector(
                     child: Padding(
                       padding: EdgeInsets.all(3.0),
                       child: Icon(
                         Icons.insert_emoticon,
                         color: Colors.black26,
-                        size: 25,
+                        size: 28,
                       ),
                     ),
                     onTap: _isShowEmoJiPanel
                         ? _onHideEmoJiPanel
                         : _onShowEmoJiPanel),
+                GestureDetector(
+                    child: Container(
+                      padding: EdgeInsets.all(3.0),
+                      child: Icon(
+                        Icons.image,
+                        color: Colors.black26,
+                        size: 28,
+                      ),
+                    ),
+                    onTap: () => _getImage(ImageSource.gallery),
+                ),
+                GestureDetector(
+                    child: Container(
+                      padding: EdgeInsets.all(3.0),
+                      child: Icon(
+                        Icons.camera_alt,
+                        color: Colors.black26,
+                        size: 28,
+                      ),
+                    ),
+                    onTap: () => _getImage(ImageSource.camera),
+                ),
               ],
             ),
           ),
@@ -915,7 +875,8 @@ class _KeFuState extends State<_KeFu> {
                         maxLines: 5,
                         maxLength: 200,
                         textInputAction: TextInputAction.newline,
-                        onChanged: (String value) => _keFuStore.inputOnChanged(value),
+                        onChanged: (String value) =>
+                            _keFuStore.inputOnChanged(value),
                       ))),
               Center(
                 child: SizedBox(
@@ -945,35 +906,33 @@ class _KeFuState extends State<_KeFu> {
   }
 
   /// AppBar
-  Widget _appBar() {
-    return Builder(builder: (ctx) {
-      final keFuState = Provider.of<KeFuStore>(ctx);
-      return AppBar(
-        centerTitle: true,
-        title: Text(keFuState.isPong ? "对方正在输入..." : '在线客服'),
-        actions: <Widget>[
-          Offstage(
-            offstage: !keFuState.isService,
-            child: FlatButton(
-              child: Text(
-                "结束会话",
-                style: TextStyle(color: Colors.white),
+  Widget _appBar(BuildContext ctx) {
+    final keFuState = Provider.of<KeFuStore>(ctx);
+    return AppBar(
+      centerTitle: true,
+      title: Text(keFuState.isPong ? "对方正在输入..." : '在线客服'),
+      actions: <Widget>[
+        Offstage(
+          offstage: !keFuState.isService,
+          child: FlatButton(
+            child: Text(
+              "结束会话",
+              style: TextStyle(color: Colors.white),
+            ),
+            onPressed: _onHeadRightButton,
+          ),
+        ),
+        Offstage(
+            offstage: keFuState.isService,
+            child: IconButton(
+              icon: Icon(
+                Icons.face,
+                size: 25.0,
               ),
               onPressed: _onHeadRightButton,
-            ),
-          ),
-          Offstage(
-              offstage: keFuState.isService,
-              child: IconButton(
-                icon: Icon(
-                  Icons.face,
-                  size: 25.0,
-                ),
-                onPressed: _onHeadRightButton,
-              ))
-        ],
-      );
-    });
+            ))
+      ],
+    );
   }
 
   @override
@@ -982,20 +941,21 @@ class _KeFuState extends State<_KeFu> {
         value: _keFuStore,
         child: Builder(
           builder: (ctx) {
+
             final keFuState = Provider.of<KeFuStore>(ctx);
+
             return Scaffold(
-              appBar: _appBar(),
+              appBar: _appBar(ctx),
               body: Column(
                 children: <Widget>[
                   Expanded(
                     child: GestureDetector(
                       onPanDown: (_) {
                         _onHideEmoJiPanel();
-                        _hideFileButtons();
                         FocusScope.of(context).requestFocus(FocusNode());
                       },
                       child: CustomScrollView(
-                        controller: _scrollController,
+                        controller: _keFuStore.scrollController,
                         reverse: true,
                         slivers: <Widget>[
                           SliverPadding(
@@ -1008,12 +968,11 @@ class _KeFuState extends State<_KeFu> {
                               ImMessage _msg = keFuState.messagesRecord[index];
 
                               /// 判断是否需要显示时间
-                              bool isShowDate = false;
                               if (i == keFuState.messagesRecord.length - 1 ||
                                   (_msg.timestamp - 120) >
                                       keFuState.messagesRecord[index - 1]
                                           .timestamp) {
-                                isShowDate = true;
+                                  _msg.isShowDate = true;
                               }
 
                               switch (_msg.bizType) {
@@ -1021,7 +980,6 @@ class _KeFuState extends State<_KeFu> {
                                 case "welcome":
                                   return TextMessage(
                                     message: _msg,
-                                    isShowDate: isShowDate,
                                     isSelf:
                                         _msg.fromAccount == keFuState.imUser.id,
                                     onCancel: () => _onCancelMessage(_msg),
@@ -1031,7 +989,6 @@ class _KeFuState extends State<_KeFu> {
                                 case "photo":
                                   return PhotoMessage(
                                     message: _msg,
-                                    isShowDate: isShowDate,
                                     isSelf:
                                         _msg.fromAccount == keFuState.imUser.id,
                                     onCancel: () => _onCancelMessage(_msg),
@@ -1045,13 +1002,11 @@ class _KeFuState extends State<_KeFu> {
                                 case "system":
                                   return SystemMessage(
                                     message: _msg,
-                                    isSelf:
-                                        _msg.fromAccount == keFuState.imUser.id,
+                                    isSelf: _msg.fromAccount == keFuState.imUser.id,
                                   );
                                 case "knowledge":
                                   return KnowledgeMessage(
                                     message: _msg,
-                                    isShowDate: isShowDate,
                                     onSend: (msg) {
                                       _editingController.text =
                                           msg.title == "以上都不是？我要找人工"
@@ -1067,7 +1022,7 @@ class _KeFuState extends State<_KeFu> {
                           ),
                           SliverToBoxAdapter(
                             child: Offstage(
-                              offstage: !_isMorLoading,
+                              offstage: !keFuState.isMorLoading,
                               child: Padding(
                                 padding: EdgeInsets.symmetric(vertical: 10.0),
                                 child: Row(
@@ -1111,5 +1066,4 @@ class _KeFuState extends State<_KeFu> {
           },
         ));
   }
-
 }

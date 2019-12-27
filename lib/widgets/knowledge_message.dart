@@ -7,10 +7,9 @@ import 'im_avatar.dart';
 
 typedef SendKnowledgeMessage(KnowledgeModel message);
 class KnowledgeMessage extends StatelessWidget{
-  KnowledgeMessage({this.message, this.onSend, this.isShowDate = false});
+  KnowledgeMessage({this.message, this.onSend});
   final ImMessage message;
   final SendKnowledgeMessage onSend;
-  final bool isShowDate;
   bool get isSelf{
     return true;
   }
@@ -21,7 +20,7 @@ class KnowledgeMessage extends StatelessWidget{
     
     Widget msgWidget(){
       return Container(
-      margin: EdgeInsets.only(bottom: 25.0),
+      margin: EdgeInsets.only(bottom: 15.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.start,
@@ -99,7 +98,7 @@ class KnowledgeMessage extends StatelessWidget{
     return Column(
       children: <Widget>[
         Offstage(
-          offstage: !isShowDate,
+          offstage: !message.isShowDate,
           child: DateWidget(date: message.timestamp,),
         ),
         msgWidget()

@@ -14,8 +14,9 @@ class ImMessage {
   int uploadProgress;
   String avatar;
   String nickname;
+  bool isShowDate = false;
 
-  ImMessage({this.bizType,this.key, this.uploadProgress, this.version, this.avatar,this.nickname, this.isShowCancel = false, this.payload, this.fromAccount, this.toAccount, this.timestamp, this.read, this.transferAccount});
+  ImMessage({this.bizType,this.key, this.isShowDate = false, this.uploadProgress, this.version, this.avatar,this.nickname, this.isShowCancel = false, this.payload, this.fromAccount, this.toAccount, this.timestamp, this.read, this.transferAccount});
 
   ImMessage.fromJson(Map<String, dynamic> json) {
     this.bizType = json['biz_type'];
