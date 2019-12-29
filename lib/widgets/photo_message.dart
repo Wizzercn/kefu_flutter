@@ -91,8 +91,8 @@ class PhotoMessage extends StatelessWidget{
                                     maxScale: 2.0,
                                     minScale: 0.5,
                                     child: CachedImage(
-                                      width: MediaQuery.of(context).size.width/1.5,
-                                      height: MediaQuery.of(context).size.height/1.5,
+                                      width: MediaQuery.of(context).size.width/1,
+                                      height: MediaQuery.of(context).size.height/1,
                                       src: message.payload,
                                       bgColor: Colors.transparent,
                                       fit: BoxFit.fitWidth

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -15,6 +16,7 @@ import 'package:provider/provider.dart';
 import 'models/im_message.dart';
 import 'models/im_token_info.dart';
 import 'models/im_user.dart';
+import 'models/knowledge_model.dart';
 import 'models/robot.dart';
 import 'models/service_user.dart';
 import 'models/upload_secret.dart';
@@ -85,6 +87,18 @@ class KeFuStore with ChangeNotifier {
   /// 加载更多...
   bool isMorLoading = false;
 
+  /// 为消息总数
+  int messageReadCount = 0;
+
+  /// 是否在kefuView窗口 1 or 0  1在客服窗口  0 不在客服窗口
+  int window = 0;
+
+  /// 被踢出最长时间
+  int tomeOutTime = 60*1000 * 8;
+
+  /// 检索回来的知识库信息列表
+  List<KnowledgeModel> handshakeKeywordList = [];
+
 
   // 滚动条控制器
   ScrollController scrollController = ScrollController();
@@ -111,6 +125,9 @@ class KeFuStore with ChangeNotifier {
 
   /// IM 清除未读消息    /uid
   static const String API_CLEAN_READ = "/public/clean_read";
+
+  /// IM 清除未读消息    /uid
+  static const String API_WINDOW_CHANGE= "/public/window";
 
   /// IM 获取上传配置
   static const String API_UPLOAD_SECRET = "/public/secret";
@@ -149,7 +166,10 @@ class KeFuStore with ChangeNotifier {
     await _getRobot();
     await _flutterMimcInstance();
     _addMimcEvent();
-    
+    getReadCount();
+    _checkIsOutSession();
+    _onCheckIsloogTimeNotCallBack();
+    _onServciceLastMessageTimeNotCallBack();
   }
 
   // 获取客服View页面
@@ -220,9 +240,40 @@ class KeFuStore with ChangeNotifier {
     }
   }
 
+  /// 上报窗口位置信息
+  /// [status] 1 or 0  1在客服窗口  0 不在客服窗口
+  Future<void> setWindow(int status) async {
+    window = status;
+    try {
+      Response response = await http.put(API_WINDOW_CHANGE + '/' + imUser.id.toString(), data: {
+        "window": status
+      });
+      notifyListeners();
+      if(status == 1){
+        debugPrint("在客服窗口");
+      }else{
+        debugPrint("不在客服窗口");
+      }
+      if (response.data["code"] == 200) {
+        debugPrint("切换成功");
+      } else {
+        debugPrint("切换失败");
+      }
+    } catch (e) {
+      debugPrint(e);
+    }
+  }
+
+
   /// 实例化 SharedPreferences
   Future<void> _prefsInstance() async {
     prefs = await SharedPreferences.getInstance();
+  }
+
+  /// 设置检索知识库信息列表
+  void setHandshakeKeywordList(List<KnowledgeModel> data){
+    handshakeKeywordList = data;
+    notifyListeners();
   }
 
   /// 获取IM 未读消息
@@ -232,14 +283,18 @@ class KeFuStore with ChangeNotifier {
         await http.get(API_HOST + API_GET_READ + '/' + imUser.id.toString());
     if (response.data["code"] == 200) {
       _count = response.data["data"];
+      messageReadCount = _count;
+      debugPrint("_count===$_count");
+      notifyListeners();
     }
     return _count;
   }
 
   /// 清除IM未读消息
-  Future<Response> cleanRead() async {
-    return await http
-        .get(API_HOST + API_CLEAN_READ + '/' + imUser.id.toString());
+  Future<void> cleanRead() async {
+    messageReadCount = 0;
+    await http.get(API_HOST + API_CLEAN_READ + '/' + imUser.id.toString());
+    notifyListeners();
   }
 
   /// 上报IM最后活动时间
@@ -295,7 +350,14 @@ class KeFuStore with ChangeNotifier {
 
   /// 发送消息
   void sendMessage(MessageHandle msgHandle) async {
+
     flutterMimc.sendMessage(msgHandle.sendMessage);
+
+    // 重新设定客服是否超时没回复
+    prefs.setInt("adminLastCallBackMessageTime_$toAccount", DateTime.now().millisecondsSinceEpoch);
+    isServciceLastMessageTimeNotCallBackCompute = true;
+    isCheckIsloogTimeNotCallBackCompute = false;
+
     /// 消息入库（远程）
     MessageHandle cloneMsgHandle = msgHandle.clone();
     String type = cloneMsgHandle.localMessage.bizType;
@@ -334,7 +396,7 @@ class KeFuStore with ChangeNotifier {
 
   // 处理头像昵称
   Future<ImMessage> _handlerMessage(ImMessage msg) async {
-    const String defaultAvatar = 'http://qiniu.cmp520.com/avatar_default.png';
+    const String defaultAvatar = 'http://qiniu.cmp520.com/avatar_degault_3.png';
     msg.avatar = defaultAvatar;
     // 消息是我发的
     if (msg.fromAccount == imUser.id) {
@@ -408,6 +470,17 @@ class KeFuStore with ChangeNotifier {
       ImMessage message = ImMessage.fromJson(
           json.decode(utf8.decode(base64Decode(msg.payload))));
       debugPrint("收到消息======${message.toJson()}");
+      // 保存最后服务时间
+      if(isService){
+        prefs.setInt("serviceLastTime${imUser.id}", DateTime.now().millisecondsSinceEpoch);
+      }
+      // 计算客服用户最后回复时间
+      if(isService && (message.bizType == "text" || message.bizType == "transfer" || message.bizType == "photo" || message.bizType == 'cancel')){
+          isCheckIsloogTimeNotCallBackCompute = true;
+          prefs.setInt("userLastCallBackMessageTime_${imUser.id}", DateTime.now().millisecondsSinceEpoch);
+          isServciceLastMessageTimeNotCallBackCompute = false;
+      }
+
       switch (message.bizType) {
         case "transfer":
           serviceUser = ServiceUser.fromJson(json.decode(message.payload));
@@ -435,7 +508,22 @@ class KeFuStore with ChangeNotifier {
           message.key = int.parse(message.payload);
           deleteMessage(message);
           break;
+        case "search_knowledge":
+          handshakeKeywordList = [];
+          if(message.payload != ""){
+            handshakeKeywordList = ((json.decode(message.payload) as List).map((i)=>KnowledgeModel.fromJson(i)).toList());
+          }
+          notifyListeners();
+          break;
       }
+
+      if(window == 0 && message.bizType != 'pong'){
+        messageReadCount = messageReadCount + 1;
+      }
+      
+      // 不处理的消息
+      if(message.bizType == 'search_knowledge' || message.bizType == "pong") return;
+
       ImMessage newMsg = await _handlerMessage(message);
       messagesRecord.add(newMsg);
       notifyListeners();
@@ -492,7 +580,6 @@ class KeFuStore with ChangeNotifier {
       /// 七牛上传
       else if (uploadSecret.mode == 2) {
         uploadUrl = API_QINIU_UPLOAD_FILE;
-
         /// 其他
       } else {}
 
@@ -536,13 +623,77 @@ class KeFuStore with ChangeNotifier {
     notifyListeners();
   }
 
+  // 判断是否被踢出对话
+  void _checkIsOutSession() async{
+    int serviceLastTime = prefs.getInt("serviceLastTime${imUser.id}");
+    if(serviceLastTime != null){
+      if(DateTime.now().millisecondsSinceEpoch > serviceLastTime + tomeOutTime){
+        isService = false;
+        serviceUser = null;
+        notifyListeners();
+      }
+    }
+    await Future.delayed(Duration(milliseconds: 60000));
+    _checkIsOutSession();
+  }
+
+  // 计算用户是否长时间未回复弹出给出提示
+  bool isCheckIsloogTimeNotCallBackCompute = false;
+  void _onCheckIsloogTimeNotCallBack() async{
+    if(isCheckIsloogTimeNotCallBackCompute){
+      int nowTimer = DateTime.now().millisecondsSinceEpoch;
+      int lastCallBackMessageTime = prefs.getInt("userLastCallBackMessageTime_${imUser.id}") ?? nowTimer;
+      if(isService && (nowTimer - lastCallBackMessageTime) >= (1000*60)*5){
+        MessageHandle msgHandle =  createMessage(toAccount: toAccount, msgType:"system", content: "您已超过5分钟未回复消息，系统3分钟后将结束对话");
+        ImMessage _msg = await _handlerMessage(msgHandle.localMessage);
+        messagesRecord.add(_msg);
+        isCheckIsloogTimeNotCallBackCompute = false;
+        notifyListeners();
+        debugPrint("您已超过5分钟未回复消息，系统3分钟后将结束对话");
+        toScrollEnd();
+      }
+    }
+    await Future.delayed(Duration(milliseconds: 5000));
+    _onCheckIsloogTimeNotCallBack();
+  }
+
+  // 计算客服最后回复时间(超过2分钟没回复给出提示)
+  bool isServciceLastMessageTimeNotCallBackCompute = false;
+  void _onServciceLastMessageTimeNotCallBack() async{
+    if(isServciceLastMessageTimeNotCallBackCompute){
+      String loogTimeWaitText = robot.loogTimeWaitText;
+      int nowTimer = DateTime.now().millisecondsSinceEpoch;
+      int lastCallBackMessageTime = prefs.getInt("adminLastCallBackMessageTime_$toAccount") ?? nowTimer;
+      if(isService && loogTimeWaitText.isNotEmpty &&  (nowTimer - lastCallBackMessageTime) >= (1000*60)*2){
+        MessageHandle msgHandle =  createMessage(toAccount: toAccount, msgType:"text", content: loogTimeWaitText);
+        msgHandle.localMessage.fromAccount = robot.id;
+        msgHandle.localMessage.isShowCancel = false;
+        ImMessage _msg = await _handlerMessage(msgHandle.localMessage);
+        messagesRecord.add(_msg);
+        isServciceLastMessageTimeNotCallBackCompute = false;
+        notifyListeners();
+        toScrollEnd();
+      }
+    }
+    
+    await Future.delayed(Duration(milliseconds: 5000));
+    _onServciceLastMessageTimeNotCallBack();
+
+  }
+
+  /// 滚动条至底部
+  void toScrollEnd() async {
+    await Future.delayed(Duration(milliseconds: 100));
+    scrollController?.jumpTo(0);
+  }
+
   @override
   void dispose() {
-    _subStatus?.cancel();
-    _subHandleMessage?.cancel();
-    scrollController?.dispose();
-    super.dispose();
-  }
+      _subStatus?.cancel();
+      _subHandleMessage?.cancel();
+      scrollController?.dispose();
+      super.dispose();
+    }
 
 }
 
@@ -565,6 +716,25 @@ class _KeFuState extends State<_KeFu> {
   FocusNode _focusNode = FocusNode();
   TextEditingController _editingController = TextEditingController();
 
+
+    // 检索知识库消息
+  Timer _searchHandshakeTimer;
+  void _onSearchHandshake(String value){
+    if(_keFuStore.isService) return;
+    String content = value.trim();
+    if(content == "" || content.isEmpty){
+      _keFuStore.setHandshakeKeywordList([]);
+    }
+    if(_searchHandshakeTimer != null) _searchHandshakeTimer.cancel();
+    _searchHandshakeTimer = Timer.periodic(Duration(milliseconds: 500), (_){
+      MessageHandle msgHandle =  _keFuStore.createMessage(toAccount: _keFuStore.toAccount, msgType:"search_knowledge", content: content);
+      _keFuStore.sendMessage(msgHandle);
+      _keFuStore.setHandshakeKeywordList([]);
+      _searchHandshakeTimer?.cancel();
+      _searchHandshakeTimer = null;
+    });
+  }
+
   /// 初始化生命周期
   @override
   void initState() {
@@ -573,15 +743,20 @@ class _KeFuState extends State<_KeFu> {
       _focusNode.addListener(() {
         if (_focusNode.hasFocus) {
           _onHideEmoJiPanel();
-          _toScrollEnd();
+          _keFuStore.toScrollEnd();
         }
       });
-
       /// 监听滚动条
       _keFuStore.scrollController.addListener(() => _onScrollViewControllerAddListener());
 
       // 监听消息
       _addEventMessage();
+
+      // 进入客服窗口
+      _keFuStore.setWindow(1);
+
+      // 清除未读消息
+      _keFuStore.cleanRead();
 
     }
   }
@@ -591,7 +766,7 @@ class _KeFuState extends State<_KeFu> {
     _keFuStore.flutterMimc.addEventListenerHandleMessage().listen((MIMCMessage msg){
 
       // 滚动条置底
-      _toScrollEnd();
+      _keFuStore.toScrollEnd();
 
     });
   }
@@ -617,23 +792,15 @@ class _KeFuState extends State<_KeFu> {
   }
 
   /// 点击发送按钮(发送消息)
-  void _onSubmit() {
+  void _onSubmit() async{
     String content = _editingController.value.text.trim();
     if (content.isEmpty) return;
     MessageHandle messageHandle = _keFuStore.createMessage(toAccount: _keFuStore.toAccount, msgType: "text", content: content);
     _keFuStore.sendMessage(messageHandle);
     _editingController.clear();
-    _toScrollEnd();
-  }
-
-  /// Scroll to end
-  void _toScrollEnd() async {
-    await Future.delayed(Duration(milliseconds: 100));
-    if(!mounted){
-      _toScrollEnd();
-      return;
-    }
-    _keFuStore.scrollController?.jumpTo(0);
+    _keFuStore.toScrollEnd();
+    await Future.delayed(Duration(milliseconds: 500));
+    _keFuStore.setHandshakeKeywordList([]);
   }
 
   /// onShowEmoJiPanel
@@ -766,7 +933,7 @@ class _KeFuState extends State<_KeFu> {
                           height: 100.0,
                           bgColor: Colors.transparent,
                           fit: BoxFit.contain,
-                          src: "${message.payload}"),
+                          src: "${message.payload}..."),
                     )
                   : Text(
                       message.payload,
@@ -792,6 +959,7 @@ class _KeFuState extends State<_KeFu> {
 
   /// footer bar
   Widget _bottomBar() {
+    ThemeData themeData = Theme.of(context);
     return Container(
       width: double.infinity,
       padding: EdgeInsets.symmetric(horizontal: 10.0, vertical: 5.0),
@@ -857,7 +1025,7 @@ class _KeFuState extends State<_KeFu> {
                       constraints: BoxConstraints(minHeight: 50.0),
                       padding: EdgeInsets.symmetric(horizontal: 5.0),
                       child: TextField(
-                        cursorColor: Colors.transparent,
+                        cursorColor: themeData.primaryColor,
                         decoration: InputDecoration(
                             hintText: "请用一句话描述您的问题~",
                             border: InputBorder.none,
@@ -874,22 +1042,34 @@ class _KeFuState extends State<_KeFu> {
                         minLines: 1,
                         maxLines: 5,
                         maxLength: 200,
-                        textInputAction: TextInputAction.newline,
-                        onChanged: (String value) =>
-                            _keFuStore.inputOnChanged(value),
+                        onSubmitted: (_){
+                          _onSubmit();
+                          FocusScope.of(context).requestFocus(_focusNode);
+                        },
+                        textInputAction: Platform.isIOS ? TextInputAction.send : TextInputAction.newline,
+                        onChanged: (String value){
+                          _onSearchHandshake(value);
+                          _keFuStore.inputOnChanged(value);
+                        },
                       ))),
-              Center(
+              Offstage(
+                offstage: Platform.isIOS && !_isShowEmoJiPanel,
+                child: Center(
                 child: SizedBox(
                   width: 60.0,
                   child: FlatButton(
                     color: Theme.of(context).primaryColor,
-                    onPressed: _onSubmit,
+                    onPressed: (){
+                       _onSubmit();
+                      FocusScope.of(context).requestFocus(_focusNode);
+                    },
                     child: Text(
                       "发送",
                       style: TextStyle(color: Colors.white),
                     ),
                   ),
                 ),
+              ),
               )
             ],
           )
@@ -902,12 +1082,14 @@ class _KeFuState extends State<_KeFu> {
   void dispose() {
     _focusNode?.dispose();
     _editingController?.dispose();
+    // 离开客服窗口
+    _keFuStore.setWindow(0);
     super.dispose();
   }
 
   /// AppBar
-  Widget _appBar(BuildContext ctx) {
-    final keFuState = Provider.of<KeFuStore>(ctx);
+  Widget _appBar(BuildContext context) {
+    final keFuState = Provider.of<KeFuStore>(context);
     return AppBar(
       centerTitle: true,
       title: Text(keFuState.isPong ? "对方正在输入..." : '在线客服'),
@@ -925,27 +1107,70 @@ class _KeFuState extends State<_KeFu> {
         Offstage(
             offstage: keFuState.isService,
             child: IconButton(
-              icon: Icon(
-                Icons.face,
-                size: 25.0,
-              ),
+              icon: Image.network("http://qiniu.cmp520.com/kefu_icon_2000.png",width: 25.0, height: 25.0),
               onPressed: _onHeadRightButton,
             ))
       ],
     );
   }
 
+ /// knowledge Widget
+ Widget _knowledgeWidget(BuildContext context){
+   final keFuState = Provider.of<KeFuStore>(context);
+   return Offstage(
+     offstage: keFuState.handshakeKeywordList.length == 0,
+     child: Container(
+     child: Column(
+       crossAxisAlignment: CrossAxisAlignment.start,
+       children: <Widget>[
+         Padding(
+           padding: EdgeInsets.symmetric(vertical: 10.0, horizontal: 15.0),
+           child: Text("以下是您关心的问题？"),
+         ),
+         Divider(height: 1.0,),
+         Column(
+           children: List.generate(keFuState.handshakeKeywordList.length, (int index){
+             KnowledgeModel item = keFuState.handshakeKeywordList[index];
+             return SizedBox(
+               height: 33.0,
+               child: CupertinoButton(
+               padding: EdgeInsets.symmetric(horizontal: 15.0),
+              onPressed: (){
+                _editingController.text = item.title;
+                _onSubmit();
+              },
+              child: Row(
+                children: <Widget>[
+                  Padding(
+                      padding: EdgeInsets.only(top: 3.0),
+                      child: Text(" • ", style: TextStyle(fontWeight: FontWeight.w600),),
+                    ),
+                    Expanded(
+                      child: Text("${item.title}",style: TextStyle(fontSize: 14.0), maxLines: 1, overflow: TextOverflow.ellipsis,),
+                    )
+                ],
+              ),
+            ),
+             );
+           }),
+         )
+       ],
+     ),
+   ),
+   );
+ }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(_) {
     return ChangeNotifierProvider<KeFuStore>.value(
         value: _keFuStore,
         child: Builder(
-          builder: (ctx) {
+          builder: (BuildContext context) {
 
-            final keFuState = Provider.of<KeFuStore>(ctx);
+            final keFuState = Provider.of<KeFuStore>(context);
 
             return Scaffold(
-              appBar: _appBar(ctx),
+              appBar: _appBar(context),
               body: Column(
                 children: <Widget>[
                   Expanded(
@@ -1054,6 +1279,7 @@ class _KeFuState extends State<_KeFu> {
                       top: false,
                       child: Column(
                         children: <Widget>[
+                          _knowledgeWidget(context),
                           _bottomBar(),
                           _emoJiPanel(),
                         ],

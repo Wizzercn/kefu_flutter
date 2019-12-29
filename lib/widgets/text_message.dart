@@ -12,6 +12,8 @@ class TextMessage extends StatelessWidget{
   @override
   Widget build(BuildContext context) {
 
+    ThemeData themeData = Theme.of(context);
+
     Widget _avatar(bool show){
       return  Offstage(
         offstage: !show,
@@ -20,6 +22,7 @@ class TextMessage extends StatelessWidget{
     }
 
     Widget _cancel(){
+
       return Offstage(
         offstage: !message.isShowCancel,
         child: Row(
@@ -27,7 +30,7 @@ class TextMessage extends StatelessWidget{
           children: <Widget>[
             GestureDetector(
               onTap: onCancel,
-              child: Text(" 撤回 ", style: TextStyle(color: Colors.blue)),
+              child: Text(" 撤回 ", style: TextStyle(color: themeData.primaryColor)),
             ),
           ],
         ),
@@ -61,7 +64,7 @@ class TextMessage extends StatelessWidget{
                         ),
                         padding: EdgeInsets.symmetric(horizontal:10.0, vertical: 5.0),
                         decoration: BoxDecoration(
-                            color: isSelf ? Colors.blue : Colors.white,
+                            color: isSelf ? themeData.primaryColor : Colors.white,
                             boxShadow: [
                               BoxShadow(
                                 offset: Offset(0.0, 3.0),

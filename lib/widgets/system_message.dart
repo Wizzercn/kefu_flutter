@@ -32,6 +32,8 @@ class SystemMessage extends StatelessWidget{
                   return Text('已为您接入${message.transferAccount}号客服');
                 case "timeout":
                   return Text('由于您长时间未回复，系统结束了本次会话');
+                case "system":
+                  return Text('${message.payload}');
                 default:
                   return SizedBox();
               }
