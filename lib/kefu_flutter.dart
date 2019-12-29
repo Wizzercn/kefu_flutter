@@ -84,9 +84,6 @@ class KeFuStore with ChangeNotifier {
   /// 没有更多记录了
   bool isScrollEnd = false;
 
-  /// 加载更多...
-  bool isMorLoading = false;
-
   /// 为消息总数
   int messageReadCount = 0;
 
@@ -104,12 +101,14 @@ class KeFuStore with ChangeNotifier {
   ScrollController scrollController = ScrollController();
 
   /// 小米消息云配置
-  static const String APP_ID = "2882303761518282099";
-  static const String APP_KEY = "5521828290099";
-  static const String APP_SECRET = "516JCA60FdP9bHQUdpXK+Q==";
+  static String mimcAppID;
+  static String mimcAppKey;
+  static String mimcAppSecret;
+  static String mimcTokenData;
+  static bool mimcDebug;
 
   /// API 接口
-  static const String API_HOST = "http://kf.aissz.com:666/v1";
+  static String apiHost;
 
   /// IM 注册初始化IM账号
   static const String API_REGISTER = "/public/register";
@@ -122,6 +121,9 @@ class KeFuStore with ChangeNotifier {
 
   /// IM 获取未读消息    /uid
   static const String API_GET_READ = "/public/read";
+
+  /// 获取历史消息记录
+  static const String API_GET_MESSAGE = "/public/messages";
 
   /// IM 清除未读消息    /uid
   static const String API_CLEAN_READ = "/public/clean_read";
@@ -150,8 +152,34 @@ class KeFuStore with ChangeNotifier {
     return instance;
   }
 
+  /// 配置信息
+  /// mimcTokenData 不为空，即优先使用 mimcTokenData
+  /// [apiHost] 客服后台API地址
+  /// [mimcAppID]     mimc AppID
+  /// [mimcAppKey]    mimc AppKey
+  /// [mimcAppSecret] mimc AppSecret
+  /// [mimcTokenData] mimc TokenData
+  static void configs({
+    String host,
+    String appID,
+    String appKey,
+    String appSecret,
+    String mimcToken,
+    bool debug = false
+  }){
+    assert(host != null);
+    apiHost = host;
+    mimcAppID = appID;
+    mimcAppKey = appKey;
+    mimcAppSecret = appSecret;
+    mimcTokenData = mimcToken;
+    mimcDebug = debug;
+  }
+
+
   /// 构造器
   KeFuStore() {
+    debugPrint("api===$apiHost");
     _dioInstance();
     _getUploadSecret();
     _upImLastActivity();
@@ -170,6 +198,7 @@ class KeFuStore with ChangeNotifier {
     _checkIsOutSession();
     _onCheckIsloogTimeNotCallBack();
     _onServciceLastMessageTimeNotCallBack();
+    getMessageRecord();
   }
 
   // 获取客服View页面
@@ -179,7 +208,7 @@ class KeFuStore with ChangeNotifier {
   Future<void> _dioInstance() async {
     if (http != null) return;
     http = Dio();
-    http.options.baseUrl = API_HOST;
+    http.options.baseUrl = apiHost;
     http.options.connectTimeout = 60000;
     http.options.receiveTimeout = 60000;
     http.options.headers = {};
@@ -187,12 +216,16 @@ class KeFuStore with ChangeNotifier {
 
   /// 实例化 FlutterMimc
   Future<void> _flutterMimcInstance() async {
-    flutterMimc = FlutterMimc.init(
-        debug: false,
-        appId: APP_ID,
-        appKey: APP_KEY,
-        appSecret: APP_SECRET,
+    if(mimcTokenData != null){
+      flutterMimc = FlutterMimc.stringTokenInit(mimcTokenData);
+    }else{
+      flutterMimc = FlutterMimc.init(
+        debug: mimcDebug,
+        appId: mimcAppID,
+        appKey: mimcAppKey,
+        appSecret: mimcAppSecret,
         appAccount: imUser.id.toString());
+    }
   }
 
   /// 注册IM账号
@@ -276,11 +309,40 @@ class KeFuStore with ChangeNotifier {
     notifyListeners();
   }
 
+  /// 获取服务器消息列表
+  Future<void> getMessageRecord({int timestamp, int pageSize = 20}) async {
+    debugPrint("timestamp====$timestamp");
+    Response response =
+        await http.post(apiHost + API_GET_MESSAGE,
+        data: {
+          "timestamp": timestamp ?? DateTime.now().millisecondsSinceEpoch,
+          "page_size": pageSize,
+          "account": imUser.id
+        },
+        options: Options(headers: {
+          "token": imUser.token
+        })).catchError((onError){
+          debugPrint(onError);
+        });
+    if (response.data["code"] == 200) {
+      List<ImMessage> _msgs = (response.data['data']['list'] as List).map((i) => _handlerMessage(ImMessage.fromJson(i))).toList();
+      if(_msgs.length < pageSize){
+        isScrollEnd = true;
+      }
+      if(messagesRecord.length == 0){
+        messagesRecord = _msgs;
+      }else{
+        messagesRecord.insertAll(0, _msgs);
+      }
+      notifyListeners();
+    }
+  }
+
   /// 获取IM 未读消息
   Future<int> getReadCount() async {
     int _count = 0;
     Response response =
-        await http.get(API_HOST + API_GET_READ + '/' + imUser.id.toString());
+        await http.get(apiHost + API_GET_READ + '/' + imUser.id.toString());
     if (response.data["code"] == 200) {
       _count = response.data["data"];
       messageReadCount = _count;
@@ -293,7 +355,7 @@ class KeFuStore with ChangeNotifier {
   /// 清除IM未读消息
   Future<void> cleanRead() async {
     messageReadCount = 0;
-    await http.get(API_HOST + API_CLEAN_READ + '/' + imUser.id.toString());
+    await http.get(apiHost + API_CLEAN_READ + '/' + imUser.id.toString());
     notifyListeners();
   }
 
@@ -301,13 +363,13 @@ class KeFuStore with ChangeNotifier {
   Future<void> _upImLastActivity() async {
     Timer.periodic(Duration(milliseconds: 20000), (_) {
       if (imUser != null)
-        http.get(API_HOST + API_ACTIVITY + '/' + imUser.id.toString());
+        http.get(apiHost + API_ACTIVITY + '/' + imUser.id.toString());
     });
   }
 
   /// 获取上传文件配置
   Future<void> _getUploadSecret() async {
-    Response response = await http.get(API_HOST + API_UPLOAD_SECRET);
+    Response response = await http.get(apiHost + API_UPLOAD_SECRET);
     if (response.data["code"] == 200) {
       uploadSecret = UploadSecret.fromJson(response.data["data"]);
     } else {
@@ -371,7 +433,7 @@ class KeFuStore with ChangeNotifier {
       payload: cloneMsgHandle.localMessage.toBase64(),
     ).toBase64();
     flutterMimc.sendMessage(cloneMsgHandle.sendMessage);
-    ImMessage newMsg = await _handlerMessage(cloneMsgHandle.localMessage);
+    ImMessage newMsg = _handlerMessage(cloneMsgHandle.localMessage);
     if(type != "photo")messagesRecord.add(newMsg);
     notifyListeners();
     await Future.delayed(Duration(milliseconds: 10000));
@@ -395,7 +457,7 @@ class KeFuStore with ChangeNotifier {
   }
 
   // 处理头像昵称
-  Future<ImMessage> _handlerMessage(ImMessage msg) async {
+  ImMessage _handlerMessage(ImMessage msg) {
     const String defaultAvatar = 'http://qiniu.cmp520.com/avatar_degault_3.png';
     msg.avatar = defaultAvatar;
     // 消息是我发的
@@ -524,7 +586,7 @@ class KeFuStore with ChangeNotifier {
       // 不处理的消息
       if(message.bizType == 'search_knowledge' || message.bizType == "pong") return;
 
-      ImMessage newMsg = await _handlerMessage(message);
+      ImMessage newMsg = _handlerMessage(message);
       messagesRecord.add(newMsg);
       notifyListeners();
     });
@@ -645,7 +707,7 @@ class KeFuStore with ChangeNotifier {
       int lastCallBackMessageTime = prefs.getInt("userLastCallBackMessageTime_${imUser.id}") ?? nowTimer;
       if(isService && (nowTimer - lastCallBackMessageTime) >= (1000*60)*5){
         MessageHandle msgHandle =  createMessage(toAccount: toAccount, msgType:"system", content: "您已超过5分钟未回复消息，系统3分钟后将结束对话");
-        ImMessage _msg = await _handlerMessage(msgHandle.localMessage);
+        ImMessage _msg = _handlerMessage(msgHandle.localMessage);
         messagesRecord.add(_msg);
         isCheckIsloogTimeNotCallBackCompute = false;
         notifyListeners();
@@ -668,7 +730,7 @@ class KeFuStore with ChangeNotifier {
         MessageHandle msgHandle =  createMessage(toAccount: toAccount, msgType:"text", content: loogTimeWaitText);
         msgHandle.localMessage.fromAccount = robot.id;
         msgHandle.localMessage.isShowCancel = false;
-        ImMessage _msg = await _handlerMessage(msgHandle.localMessage);
+        ImMessage _msg = _handlerMessage(msgHandle.localMessage);
         messagesRecord.add(_msg);
         isServciceLastMessageTimeNotCallBackCompute = false;
         notifyListeners();
@@ -715,6 +777,9 @@ class _KeFuState extends State<_KeFu> {
   /// 输入键盘相关
   FocusNode _focusNode = FocusNode();
   TextEditingController _editingController = TextEditingController();
+
+  /// 加载更多...
+  bool _isMorLoading = false;
 
 
     // 检索知识库消息
@@ -763,7 +828,7 @@ class _KeFuState extends State<_KeFu> {
 
   /// 监听接收消息
   void _addEventMessage(){
-    _keFuStore.flutterMimc.addEventListenerHandleMessage().listen((MIMCMessage msg){
+    _keFuStore.flutterMimc?.addEventListenerHandleMessage()?.listen((MIMCMessage msg){
 
       // 滚动条置底
       _keFuStore.toScrollEnd();
@@ -776,15 +841,15 @@ class _KeFuState extends State<_KeFu> {
     try {
       ScrollPosition position = _keFuStore.scrollController.position;
       // 判断是否到底部
-      if (position.pixels + 10.0 > position.maxScrollExtent &&
+      if (position.pixels + 15.0 > position.maxScrollExtent &&
           !_keFuStore.isScrollEnd &&
-          !_keFuStore.isMorLoading) {
-        _keFuStore.isMorLoading = true;
+          !_isMorLoading) {
+          _isMorLoading = true;
+          setState(() {});
         await Future.delayed(Duration(milliseconds: 1000));
-        // List<ImMessage> _localMessages = await _getLocalMessageRecord();
-        // if(_localMessages.length <= 0)  _isScrollEnd = true;
-        // messagesRecord.insertAll(0, _localMessages);
-        _keFuStore.isMorLoading = false;
+        _keFuStore.getMessageRecord(timestamp: _keFuStore.messagesRecord[0].timestamp);
+        _isMorLoading = false;
+        setState(() {});
       }
     } catch (e) {
       debugPrint(e);
@@ -1247,19 +1312,21 @@ class _KeFuState extends State<_KeFu> {
                           ),
                           SliverToBoxAdapter(
                             child: Offstage(
-                              offstage: !keFuState.isMorLoading,
+                              offstage: !_isMorLoading,
                               child: Padding(
                                 padding: EdgeInsets.symmetric(vertical: 10.0),
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: <Widget>[
+                                    Platform.isAndroid ?
                                     SizedBox(
                                         width: 10.0,
                                         height: 10.0,
                                         child: CircularProgressIndicator(
                                           strokeWidth: 2.0,
-                                        )),
+                                        )) :
+                                    CupertinoActivityIndicator(),
                                     Text(
                                       "  加载更多",
                                       style: TextStyle(color: Colors.black38),

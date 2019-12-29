@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_advanced_networkimage/provider.dart';
 import 'package:flutter_advanced_networkimage/transition.dart';
@@ -44,13 +45,14 @@ class CachedImage extends StatelessWidget{
                 ),
                 loadingWidgetBuilder: (_, double progress, __) =>
                     Center(
-                      child: SizedBox(
+                      child: Platform.isAndroid ?
+                       SizedBox(
                         width: 15.0,
                         height: 15.0,
                         child: CircularProgressIndicator(
                           strokeWidth: 2.0,
                         )
-                      )
+                      ) : CupertinoActivityIndicator()
                   ),
                 fit: fit,
                 placeholder: Icon(
