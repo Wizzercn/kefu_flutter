@@ -1,15 +1,102 @@
-# kefu_flutter
+# 欢迎使用本客服系统 - kefu_flutter
 
-A new Flutter package.
+![客服系统](http://qiniu.cmp520.com/flutter_kefu.jpg)
 
-## Getting Started
+## 本项目关联GIT项目资源连接
+- **[服务端][1]** 
+- **[客服端][2]** 
+- **[客户端H5][3]**
+- **[客户端Flutter][4]**
 
-This project is a starting point for a Dart
-[package](https://flutter.dev/developing-packages/),
-a library module containing code that can be shared easily across
-multiple Flutter or Dart projects.
+**本系统** 是基于小米消息云实现的一款简单实用的面向多终端的客服系统，本系统简单易用，易扩展，易整合现有的业务系统，无缝对接自有业务。
 
-For help getting started with Flutter, view our 
-[online documentation](https://flutter.dev/docs), which offers tutorials, 
-samples, guidance on mobile development, and a full API reference.
-# kefu_flutter
+
+## 项目依赖库
+``` dart
+  flutter_mimc: 0.1.0
+  dio: 2.1.13
+  image_picker: 0.6.1+3
+  shared_preferences: 0.5.3+4
+  provider: 3.2.0
+  flutter_advanced_networkimage: 0.5.0
+  
+```
+
+## Android 你应该添加的权限
+```xml
+ <uses-permission android:name="android.permission.INTERNET"/>
+ <uses-permission android:name="android.permission.CAMERA" />
+ <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />​
+    
+```
+
+## IOS 你应该添加的权限
+```xml
+ <key>NSCameraUsageDescription</key>
+ <key>NSPhotoLibraryUsageDescription</key>
+    
+```
+
+## EXAMPLE AND INSTALL
+
+- **[下载Android体验][5]**
+
+dependencies:
+  kefu_flutter: $lastVersion
+
+import 'package:kefu_flutter/kefu_flutter.dart';
+
+``` dart
+
+KeFuStore _keFu;
+
+@override
+void initState() {
+    // 配置文件 (1)
+    KeFuStore.configs(
+        host: "",
+        appID: "",
+        appKey: "",
+        appSecret: ""
+    );
+
+    // 获得实例并监听数据动态 (2)
+    _keFu = KeFuStore.getInstance;
+
+    // 获得实例并监听数据动态 (3)
+    _keFu.addListener((){
+        _keFu = KeFuStore.getInstance;
+        debugPrint("_keFu对象变动");
+        if(mounted) setState(() {});
+    }); 
+}
+
+/// 获得客服页面视图
+_keFu.view();
+
+/// 然后记得销毁
+@override
+void dispose() {
+    _keFu?.dispose();
+    super.dispose();
+}
+
+
+  
+``` 
+
+
+### Customize configuration
+See [Configuration Reference](https://cli.vuejs.org/config/).
+
+### TypeError: Cannot destructure property `createHash` of 'undefined' or 'null'.
+npm add webpack@latest  OK
+
+
+
+
+  [1]: https://github.com/chenxianqi/kefu_server
+  [2]: https://github.com/chenxianqi/kefu_admin
+  [3]: https://github.com/chenxianqi/kefu_client
+  [4]: https://github.com/chenxianqi/kefu_flutter
+  [5]: http://kf.aissz.com:666/static/app/app-release.apk
