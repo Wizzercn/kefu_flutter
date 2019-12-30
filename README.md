@@ -85,16 +85,6 @@ void dispose() {
   
 ``` 
 
-
-### Customize configuration
-See [Configuration Reference](https://cli.vuejs.org/config/).
-
-### TypeError: Cannot destructure property `createHash` of 'undefined' or 'null'.
-npm add webpack@latest  OK
-
-
-
-
   [1]: https://github.com/chenxianqi/kefu_server
   [2]: https://github.com/chenxianqi/kefu_admin
   [3]: https://github.com/chenxianqi/kefu_client
