@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'cached_network_image.dart';
+
 class ImAvatar extends StatelessWidget {
   ImAvatar({this.avatar});
 
@@ -32,8 +33,6 @@ class ImAvatar extends StatelessWidget {
             height: 30.0,
             bgColor: Colors.transparent,
             src: avatar,
-            fit: BoxFit.fill
-        )
-    );
+            fit: BoxFit.fill));
   }
 }

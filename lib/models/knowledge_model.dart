@@ -8,9 +8,17 @@ class KnowledgeModel {
   int updateAt;
   int createAt;
 
-  KnowledgeModel({this.title, this.subTitle, this.content, this.id, this.uid, this.platform, this.updateAt, this.createAt});
+  KnowledgeModel(
+      {this.title,
+      this.subTitle,
+      this.content,
+      this.id,
+      this.uid,
+      this.platform,
+      this.updateAt,
+      this.createAt});
 
-  KnowledgeModel.fromJson(Map<String, dynamic> json) {    
+  KnowledgeModel.fromJson(Map<String, dynamic> json) {
     this.title = json['title'];
     this.subTitle = json['sub_title'];
     this.content = json['content'];
@@ -33,5 +41,4 @@ class KnowledgeModel {
     data['create_at'] = this.createAt;
     return data;
   }
-
 }

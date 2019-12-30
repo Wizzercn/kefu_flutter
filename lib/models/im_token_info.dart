@@ -10,9 +10,19 @@ class ImTokenInfo {
   int miChid;
   int regionBucket;
 
-  ImTokenInfo({this.appId, this.appPackage, this.appAccount, this.miUserId, this.miUserSecurityKey, this.token, this.feDomainName, this.relayDomainName, this.miChid, this.regionBucket});
+  ImTokenInfo(
+      {this.appId,
+      this.appPackage,
+      this.appAccount,
+      this.miUserId,
+      this.miUserSecurityKey,
+      this.token,
+      this.feDomainName,
+      this.relayDomainName,
+      this.miChid,
+      this.regionBucket});
 
-  ImTokenInfo.fromJson(Map<String, dynamic> json) {    
+  ImTokenInfo.fromJson(Map<String, dynamic> json) {
     this.appId = json['appId'];
     this.appPackage = json['appPackage'];
     this.appAccount = json['appAccount'];
@@ -39,5 +49,4 @@ class ImTokenInfo {
     data['regionBucket'] = this.regionBucket;
     return data;
   }
-
 }

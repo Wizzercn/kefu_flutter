@@ -15,7 +15,22 @@ class Robot {
   int updateAt;
   int createAt;
 
-  Robot({this.id, this.nickname, this.avatar, this.welcome, this.understand, this.artificial, this.keyword, this.timeoutText, this.noServices, this.loogTimeWaitText, this.isRun, this.system, this.platform, this.updateAt, this.createAt});
+  Robot(
+      {this.id,
+      this.nickname,
+      this.avatar,
+      this.welcome,
+      this.understand,
+      this.artificial,
+      this.keyword,
+      this.timeoutText,
+      this.noServices,
+      this.loogTimeWaitText,
+      this.isRun,
+      this.system,
+      this.platform,
+      this.updateAt,
+      this.createAt});
 
   Robot.fromJson(Map<String, dynamic> json) {
     id = json['id'];
@@ -55,4 +70,3 @@ class Robot {
     return data;
   }
 }
-

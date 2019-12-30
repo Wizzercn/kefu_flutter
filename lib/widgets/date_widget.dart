@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../utils/im_utils.dart';
 
-class DateWidget extends StatelessWidget{
+class DateWidget extends StatelessWidget {
   DateWidget({this.date});
- final int date;
+  final int date;
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -14,9 +14,10 @@ class DateWidget extends StatelessWidget{
         minWidth: 200.0,
       ),
       alignment: Alignment.center,
-      child: Text( "${ImUtils.formatDate(date)}", style: TextStyle(
-            color: Colors.black38
-        ),),
+      child: Text(
+        "${ImUtils.formatDate(date)}",
+        style: TextStyle(color: Colors.black38),
+      ),
     );
   }
 }

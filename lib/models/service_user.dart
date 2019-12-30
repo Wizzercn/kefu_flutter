@@ -18,5 +18,4 @@ class ServiceUser {
     data['id'] = this.id;
     return data;
   }
-
 }

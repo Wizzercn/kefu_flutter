@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import '../models/im_message.dart';
 
-class SystemMessage extends StatelessWidget{
+class SystemMessage extends StatelessWidget {
   SystemMessage({this.message, this.isSelf});
   final ImMessage message;
   final bool isSelf;
   @override
   Widget build(BuildContext context) {
-
     return Padding(
       padding: EdgeInsets.only(bottom: 15.0),
       child: Container(
@@ -19,11 +18,9 @@ class SystemMessage extends StatelessWidget{
         ),
         alignment: Alignment.center,
         child: DefaultTextStyle(
-            style: TextStyle(
-                color: Colors.black38
-            ),
-            child: Builder(builder: (_){
-              switch(message.bizType){
+            style: TextStyle(color: Colors.black38),
+            child: Builder(builder: (_) {
+              switch (message.bizType) {
                 case "cancel":
                   return Text(isSelf ? "您撤回了一条消息" : "对方撤回了一条消息");
                 case "end":
@@ -37,11 +34,8 @@ class SystemMessage extends StatelessWidget{
                 default:
                   return SizedBox();
               }
-            })
-        ),
+            })),
       ),
     );
-
-    
   }
 }

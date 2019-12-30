@@ -13,9 +13,22 @@ class ImUser {
   int lastActivity;
   int createAt;
 
-  ImUser({this.avatar, this.address, this.nickname, this.token, this.phone, this.remarks, this.id, this.uid, this.platform, this.online, this.updateAt, this.lastActivity, this.createAt});
+  ImUser(
+      {this.avatar,
+      this.address,
+      this.nickname,
+      this.token,
+      this.phone,
+      this.remarks,
+      this.id,
+      this.uid,
+      this.platform,
+      this.online,
+      this.updateAt,
+      this.lastActivity,
+      this.createAt});
 
-  ImUser.fromJson(Map<String, dynamic> json) {    
+  ImUser.fromJson(Map<String, dynamic> json) {
     this.avatar = json['avatar'];
     this.address = json['address'];
     this.nickname = json['nickname'];
@@ -48,5 +61,4 @@ class ImUser {
     data['create_at'] = this.createAt;
     return data;
   }
-
 }

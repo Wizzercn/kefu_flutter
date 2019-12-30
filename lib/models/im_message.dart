@@ -16,7 +16,21 @@ class ImMessage {
   String nickname;
   bool isShowDate = false;
 
-  ImMessage({this.bizType,this.key, this.isShowDate = false, this.uploadProgress, this.version, this.avatar,this.nickname, this.isShowCancel = false, this.payload, this.fromAccount, this.toAccount, this.timestamp, this.read, this.transferAccount});
+  ImMessage(
+      {this.bizType,
+      this.key,
+      this.isShowDate = false,
+      this.uploadProgress,
+      this.version,
+      this.avatar,
+      this.nickname,
+      this.isShowCancel = false,
+      this.payload,
+      this.fromAccount,
+      this.toAccount,
+      this.timestamp,
+      this.read,
+      this.transferAccount});
 
   ImMessage.fromJson(Map<String, dynamic> json) {
     this.bizType = json['biz_type'];
@@ -34,7 +48,7 @@ class ImMessage {
     this.transferAccount = json['transfer_account'];
   }
 
-  String toBase64(){
+  String toBase64() {
     return base64Encode(utf8.encode(json.encode(toJson())));
   }
 
@@ -55,5 +69,4 @@ class ImMessage {
     data['transfer_account'] = this.transferAccount;
     return data;
   }
-
 }

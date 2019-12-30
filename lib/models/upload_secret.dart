@@ -5,7 +5,7 @@ class UploadSecret {
 
   UploadSecret({this.secret, this.host, this.mode});
 
-  UploadSecret.fromJson(Map<String, dynamic> json) {    
+  UploadSecret.fromJson(Map<String, dynamic> json) {
     this.secret = json['secret'];
     this.host = json['host'];
     this.mode = json['mode'];
@@ -18,5 +18,4 @@ class UploadSecret {
     data['mode'] = this.mode;
     return data;
   }
-
 }
