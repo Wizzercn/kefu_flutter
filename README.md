@@ -1,3 +1,6 @@
+
+客服系统开发者QQ交流群： 623661658
+
 # 欢迎使用本客服系统 - kefu_flutter
 
 ![客服系统](http://qiniu.cmp520.com/flutter_kefu.jpg)
@@ -7,18 +10,19 @@
 - **[客服端][2]** 
 - **[客户端H5][3]**
 - **[客户端Flutter][4]**
+- **[Flutter-mimc][6]**
 
 **本系统** 是基于小米消息云实现的一款简单实用的面向多终端的客服系统，本系统简单易用，易扩展，易整合现有的业务系统，无缝对接自有业务。
 
 
 ## 项目依赖库
 ``` dart
-  flutter_mimc: 0.1.0
-  dio: 2.1.13
-  image_picker: 0.6.1+3
-  shared_preferences: 0.5.3+4
-  provider: 3.2.0
-  flutter_advanced_networkimage: 0.5.0
+  flutter_mimc: ^0.1.0
+  dio: ^2.1.13
+  image_picker: ^0.6.1+3
+  shared_preferences: ^0.5.3+4
+  provider: ^3.2.0
+  flutter_advanced_networkimage: ^0.5.0
   
 ```
 
@@ -90,3 +94,4 @@ void dispose() {
   [3]: https://github.com/chenxianqi/kefu_client
   [4]: https://github.com/chenxianqi/kefu_flutter
   [5]: http://kf.aissz.com:666/static/app/app-release.apk
+  [6]: https://github.com/chenxianqi/flutter_mimc
