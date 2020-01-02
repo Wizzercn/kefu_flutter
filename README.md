@@ -3,8 +3,6 @@
 
 # 欢迎使用本客服系统 - kefu_flutter
 
-![客服系统](http://qiniu.cmp520.com/flutter_kefu.jpg)
-
 ## 本项目关联GIT项目资源连接
 - **[服务端][1]** 
 - **[客服端][2]** 
@@ -17,12 +15,12 @@
 
 ## 项目依赖库
 ``` dart
-  flutter_mimc: ^0.1.0
-  dio: ^2.1.13
-  image_picker: ^0.6.1+3
-  shared_preferences: ^0.5.3+4
-  provider: ^3.2.0
-  flutter_advanced_networkimage: ^0.5.0
+    flutter_mimc: ^1.0.1
+    dio: ^3.0.8
+    image_picker: ^0.6.2+3
+    shared_preferences: ^0.5.6
+    provider: ^4.0.1
+    flutter_advanced_networkimage: ^0.6.2
   
 ```
 

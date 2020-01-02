@@ -1,7 +1,7 @@
 name: kefu_flutter
 version: 0.0.3
 description: This is a customer service system based on Xiaomi Message Cloud. The flutter version may be the best open source customer service solution for flutter.
-homepage: https://github.com/chenxianqi/flutter_mimc
+homepage: https://github.com/chenxianqi/kefu_mimc
 
 environment:
   sdk: ">=2.1.0 <3.0.0"
