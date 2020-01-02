@@ -3,11 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:kefu_flutter/kefu_flutter.dart';
 
-void main() async{
+void main(){
+  WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(
-  SystemUiOverlayStyle(statusBarColor: Color.fromRGBO(0, 0, 0, 0.0)));
-  await SystemChrome.setPreferredOrientations(
-  [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]);
+      SystemUiOverlayStyle(statusBarColor: Color.fromRGBO(0, 0, 0, 0.0)));
+  SystemChrome.setPreferredOrientations(
+      [DeviceOrientation.portraitUp, DeviceOrientation.portraitDown]);
   return runApp(MyApp());
 }
 
@@ -47,26 +48,27 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
 
-      // 配置文件 (1)
-      KeFuStore.configs(
-        host: "",
-        appID: "",
-        appKey: "",
-        appSecret: ""
-      );
-    
-      // 获得实例并监听数据动态 (2)
-     _keFu = KeFuStore.getInstance;
+    // 配置文件 (1)
+    KeFuStore.configs(
+        debug: true,
+        host: "http://kf.aissz.com:666/v1",
+        appID: "2882303761518282099",
+        appKey: "5521828290099",
+        appSecret: "516JCA60FdP9bHQUdpXK+Q=="
+    );
 
-     // 获得实例并监听数据动态 (3)
-     _keFu.addListener((){
-        _keFu = KeFuStore.getInstance;
-        debugPrint("_keFu对象变动");
-        if(mounted) setState(() {});
+    // 获得实例并监听数据动态 (2)
+    _keFu = KeFuStore.getInstance;
+
+    // 获得实例并监听数据动态 (3)
+    _keFu.addListener((){
+      _keFu = KeFuStore.getInstance;
+      debugPrint("_keFu对象变动");
+      if(mounted) setState(() {});
     });
 
     super.initState();
-    
+
   }
 
 
@@ -98,8 +100,8 @@ class _MyHomePageState extends State<MyHomePage> {
               '欢迎使用在线客服',
             ),
             RaisedButton(
-              color: themeData.primaryColor,
-              child: Text("联系客服", style: TextStyle(color: Colors.white),), onPressed: () => _action()
+                color: themeData.primaryColor,
+                child: Text("联系客服", style: TextStyle(color: Colors.white),), onPressed: () => _action()
             )
           ],
         ),

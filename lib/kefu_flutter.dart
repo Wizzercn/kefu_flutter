@@ -69,7 +69,7 @@ class KeFuStore with ChangeNotifier {
   UploadSecret uploadSecret;
 
   /// IM 插件对象
-  FlutterMimc flutterMimc;
+  FlutterMIMC flutterMImc;
 
   /// 是否是人工
   bool isService = false;
@@ -99,11 +99,11 @@ class KeFuStore with ChangeNotifier {
   ScrollController scrollController = ScrollController();
 
   /// 小米消息云配置
-  static String mimcAppID;
-  static String mimcAppKey;
-  static String mimcAppSecret;
-  static String mimcTokenData;
-  static bool mimcDebug;
+  static String mImcAppID;
+  static String mImcAppKey;
+  static String mImcAppSecret;
+  static String mImcTokenData;
+  static bool mImcDebug;
 
   /// API 接口
   static String apiHost;
@@ -151,12 +151,12 @@ class KeFuStore with ChangeNotifier {
   }
 
   /// 配置信息
-  /// mimcTokenData 不为空，即优先使用 mimcTokenData
+  /// mImcTokenData 不为空，即优先使用 mImcTokenData
   /// [apiHost] 客服后台API地址
-  /// [mimcAppID]     mimc AppID
-  /// [mimcAppKey]    mimc AppKey
-  /// [mimcAppSecret] mimc AppSecret
-  /// [mimcTokenData] mimc TokenData
+  /// [mImcAppID]     mimc AppID
+  /// [mImcAppKey]    mimc AppKey
+  /// [mImcAppSecret] mimc AppSecret
+  /// [mImcTokenData] mimc TokenData
   static void configs(
       {String host,
       String appID,
@@ -166,11 +166,11 @@ class KeFuStore with ChangeNotifier {
       bool debug = false}) {
     assert(host != null);
     apiHost = host;
-    mimcAppID = appID;
-    mimcAppKey = appKey;
-    mimcAppSecret = appSecret;
-    mimcTokenData = mimcToken;
-    mimcDebug = debug;
+    mImcAppID = appID;
+    mImcAppKey = appKey;
+    mImcAppSecret = appSecret;
+    mImcTokenData = mimcToken;
+    mImcDebug = debug;
   }
 
   /// 构造器
@@ -185,16 +185,20 @@ class KeFuStore with ChangeNotifier {
 
   /// 初始化
   Future<void> _init() async {
-    await _prefsInstance();
-    await _registerImAccount();
-    await _getRobot();
-    await _flutterMimcInstance();
-    _addMimcEvent();
-    getReadCount();
-    _checkIsOutSession();
-    _onCheckIsloogTimeNotCallBack();
-    _onServciceLastMessageTimeNotCallBack();
-    getMessageRecord();
+    try{
+      await _prefsInstance();
+      await _registerImAccount();
+      await _getRobot();
+      await _flutterMImcInstance();
+      _addMimcEvent();
+      getReadCount();
+      _checkIsOutSession();
+      _onCheckIsloogTimeNotCallBack();
+      _onServciceLastMessageTimeNotCallBack();
+      getMessageRecord();
+    }catch(e){
+      debugPrint("报错了==$e");
+    }
   }
 
   // 获取客服View页面
@@ -202,24 +206,38 @@ class KeFuStore with ChangeNotifier {
 
   /// 实例化 dio
   Future<void> _dioInstance() async {
-    if (http != null) return;
-    http = Dio();
-    http.options.baseUrl = apiHost;
-    http.options.connectTimeout = 60000;
-    http.options.receiveTimeout = 60000;
-    http.options.headers = {};
+    BaseOptions options = new BaseOptions(
+      baseUrl: apiHost,
+      connectTimeout: 60000,
+      receiveTimeout: 60000,
+      headers: {},
+    );
+    http = Dio(options);
+    http.interceptors.add(InterceptorsWrapper(
+    onRequest:(RequestOptions options) async {
+     return options; //continue
+    },
+    onResponse:(Response response) async {
+     // 在返回响应数据之前做一些预处理
+     return response; // continue
+    },
+    onError: (DioError e) async {
+      // 当请求失败时做一些预处理
+     return e;//continue
+    }
+));
   }
 
-  /// 实例化 FlutterMimc
-  Future<void> _flutterMimcInstance() async {
-    if (mimcTokenData != null) {
-      flutterMimc = FlutterMimc.stringTokenInit(mimcTokenData);
+  /// 实例化 FlutterMImc
+  Future<void> _flutterMImcInstance() async {
+    if (mImcTokenData != null) {
+      flutterMImc = FlutterMIMC.stringTokenInit(mImcTokenData);
     } else {
-      flutterMimc = FlutterMimc.init(
-          debug: mimcDebug,
-          appId: mimcAppID,
-          appKey: mimcAppKey,
-          appSecret: mimcAppSecret,
+      flutterMImc = FlutterMIMC.init(
+          debug: mImcDebug,
+          appId: mImcAppID,
+          appKey: mImcAppKey,
+          appSecret: mImcAppSecret,
           appAccount: imUser.id.toString());
     }
   }
@@ -306,31 +324,34 @@ class KeFuStore with ChangeNotifier {
 
   /// 获取服务器消息列表
   Future<void> getMessageRecord({int timestamp, int pageSize = 20}) async {
-    debugPrint("timestamp====$timestamp");
-    Response response = await http
-        .post(apiHost + API_GET_MESSAGE,
-            data: {
-              "timestamp": timestamp ?? DateTime.now().millisecondsSinceEpoch,
-              "page_size": pageSize,
-              "account": imUser.id
-            },
-            options: Options(headers: {"token": imUser.token}))
-        .catchError((onError) {
-      debugPrint(onError);
-    });
-    if (response.data["code"] == 200) {
-      List<ImMessage> _msgs = (response.data['data']['list'] as List)
-          .map((i) => _handlerMessage(ImMessage.fromJson(i)))
-          .toList();
-      if (_msgs.length < pageSize) {
-        isScrollEnd = true;
+    try{
+      Response response = await http
+          .post(API_GET_MESSAGE,
+              data: {
+                "timestamp": timestamp ?? DateTime.now().millisecondsSinceEpoch,
+                "page_size": pageSize,
+                "account": imUser.id
+              },
+              options: Options(headers: {"token": imUser.token}))
+          .catchError((onError) {
+        debugPrint(onError);
+      });
+      if (response.data["code"] == 200) {
+        List<ImMessage> _msgs = (response.data['data']['list'] as List)
+            .map((i) => _handlerMessage(ImMessage.fromJson(i)))
+            .toList();
+        if (_msgs.length < pageSize) {
+          isScrollEnd = true;
+        }
+        if (messagesRecord.length == 0) {
+          messagesRecord = _msgs;
+        } else {
+          messagesRecord.insertAll(0, _msgs);
+        }
+        notifyListeners();
       }
-      if (messagesRecord.length == 0) {
-        messagesRecord = _msgs;
-      } else {
-        messagesRecord.insertAll(0, _msgs);
-      }
-      notifyListeners();
+    }catch(e){
+      debugPrint(e);
     }
   }
 
@@ -338,11 +359,10 @@ class KeFuStore with ChangeNotifier {
   Future<int> getReadCount() async {
     int _count = 0;
     Response response =
-        await http.get(apiHost + API_GET_READ + '/' + imUser.id.toString());
+        await http.get(API_GET_READ + '/' + imUser.id.toString());
     if (response.data["code"] == 200) {
       _count = response.data["data"];
       messageReadCount = _count;
-      debugPrint("_count===$_count");
       notifyListeners();
     }
     return _count;
@@ -351,7 +371,7 @@ class KeFuStore with ChangeNotifier {
   /// 清除IM未读消息
   Future<void> cleanRead() async {
     messageReadCount = 0;
-    await http.get(apiHost + API_CLEAN_READ + '/' + imUser.id.toString());
+    await http.get(API_CLEAN_READ + '/' + imUser.id.toString());
     notifyListeners();
   }
 
@@ -359,13 +379,13 @@ class KeFuStore with ChangeNotifier {
   Future<void> _upImLastActivity() async {
     Timer.periodic(Duration(milliseconds: 20000), (_) {
       if (imUser != null)
-        http.get(apiHost + API_ACTIVITY + '/' + imUser.id.toString());
+        http.get(API_ACTIVITY + '/' + imUser.id.toString());
     });
   }
 
   /// 获取上传文件配置
   Future<void> _getUploadSecret() async {
-    Response response = await http.get(apiHost + API_UPLOAD_SECRET);
+    Response response = await http.get(API_UPLOAD_SECRET);
     if (response.data["code"] == 200) {
       uploadSecret = UploadSecret.fromJson(response.data["data"]);
     } else {
@@ -408,7 +428,7 @@ class KeFuStore with ChangeNotifier {
 
   /// 发送消息
   void sendMessage(MessageHandle msgHandle) async {
-    flutterMimc.sendMessage(msgHandle.sendMessage);
+    flutterMImc.sendMessage(msgHandle.sendMessage);
 
     // 重新设定客服是否超时没回复
     prefs.setInt("adminLastCallBackMessageTime_$toAccount",
@@ -428,7 +448,7 @@ class KeFuStore with ChangeNotifier {
       bizType: "into",
       payload: cloneMsgHandle.localMessage.toBase64(),
     ).toBase64();
-    flutterMimc.sendMessage(cloneMsgHandle.sendMessage);
+    flutterMImc.sendMessage(cloneMsgHandle.sendMessage);
     ImMessage newMsg = _handlerMessage(cloneMsgHandle.localMessage);
     if (type != "photo") messagesRecord.add(newMsg);
     notifyListeners();
@@ -508,96 +528,100 @@ class KeFuStore with ChangeNotifier {
   StreamSubscription _subStatus;
   StreamSubscription _subHandleMessage;
   void _addMimcEvent() {
-    /// 状态发生改变
-    _subStatus = flutterMimc
-        .addEventListenerStatusChanged()
-        .listen((bool isLogin) async {
-      debugPrint("状态发生改变===$isLogin");
-      // 发送握手消息
-      if (isLogin && !isService) {
-        MessageHandle messageHandle = createMessage(
-            toAccount: toAccount, msgType: "handshake", content: "我要对机器人问好");
-        sendMessage(messageHandle);
-      }
-    });
+    try{
+      /// 状态发生改变
+      _subStatus = flutterMImc
+          .addEventListenerStatusChanged()
+          .listen((bool isLogin) async {
+        debugPrint("状态发生改变===$isLogin");
+        // 发送握手消息
+        if (isLogin && !isService) {
+          MessageHandle messageHandle = createMessage(
+              toAccount: toAccount, msgType: "handshake", content: "我要对机器人问好");
+          sendMessage(messageHandle);
+        }
+      });
 
-    /// 消息监听
-    _subHandleMessage = flutterMimc
-        .addEventListenerHandleMessage()
-        .listen((MIMCMessage msg) async {
-      ImMessage message = ImMessage.fromJson(
-          json.decode(utf8.decode(base64Decode(msg.payload))));
-      debugPrint("收到消息======${message.toJson()}");
-      // 保存最后服务时间
-      if (isService) {
-        prefs.setInt("serviceLastTime${imUser.id}",
-            DateTime.now().millisecondsSinceEpoch);
-      }
-      // 计算客服用户最后回复时间
-      if (isService &&
-          (message.bizType == "text" ||
-              message.bizType == "transfer" ||
-              message.bizType == "photo" ||
-              message.bizType == 'cancel')) {
-        isCheckIsloogTimeNotCallBackCompute = true;
-        prefs.setInt("userLastCallBackMessageTime_${imUser.id}",
-            DateTime.now().millisecondsSinceEpoch);
-        isServciceLastMessageTimeNotCallBackCompute = false;
-      }
+      /// 消息监听
+      _subHandleMessage = flutterMImc
+          .addEventListenerHandleMessage()
+          .listen((MIMCMessage msg) async {
+        ImMessage message = ImMessage.fromJson(
+            json.decode(utf8.decode(base64Decode(msg.payload))));
+        debugPrint("收到消息======${message.toJson()}");
+        // 保存最后服务时间
+        if (isService) {
+          prefs.setInt("serviceLastTime${imUser.id}",
+              DateTime.now().millisecondsSinceEpoch);
+        }
+        // 计算客服用户最后回复时间
+        if (isService &&
+            (message.bizType == "text" ||
+                message.bizType == "transfer" ||
+                message.bizType == "photo" ||
+                message.bizType == 'cancel')) {
+          isCheckIsloogTimeNotCallBackCompute = true;
+          prefs.setInt("userLastCallBackMessageTime_${imUser.id}",
+              DateTime.now().millisecondsSinceEpoch);
+          isServciceLastMessageTimeNotCallBackCompute = false;
+        }
 
-      switch (message.bizType) {
-        case "transfer":
-          serviceUser = ServiceUser.fromJson(json.decode(message.payload));
-          prefs.setString("service_user_${serviceUser.id}", message.payload);
-          isService = true;
-          MessageHandle msgHandle = createMessage(
-              toAccount: toAccount, msgType: "handshake", content: "与客服握握手鸭");
-          sendMessage(msgHandle);
-          break;
-        case "end":
-        case "timeout":
-          serviceUser = null;
-          isService = false;
-          notifyListeners();
-          break;
-        case "pong":
-          if (isPong) return;
-          isPong = true;
-          notifyListeners();
-          await Future.delayed(Duration(milliseconds: 1500));
-          isPong = false;
-          notifyListeners();
-          break;
-        case "cancel":
-          message.key = int.parse(message.payload);
-          deleteMessage(message);
-          break;
-        case "search_knowledge":
-          handshakeKeywordList = [];
-          if (message.payload != "") {
-            handshakeKeywordList = ((json.decode(message.payload) as List)
-                .map((i) => KnowledgeModel.fromJson(i))
-                .toList());
-          }
-          notifyListeners();
-          break;
-      }
+        switch (message.bizType) {
+          case "transfer":
+            serviceUser = ServiceUser.fromJson(json.decode(message.payload));
+            prefs.setString("service_user_${serviceUser.id}", message.payload);
+            isService = true;
+            MessageHandle msgHandle = createMessage(
+                toAccount: toAccount, msgType: "handshake", content: "与客服握握手鸭");
+            sendMessage(msgHandle);
+            break;
+          case "end":
+          case "timeout":
+            serviceUser = null;
+            isService = false;
+            notifyListeners();
+            break;
+          case "pong":
+            if (isPong) return;
+            isPong = true;
+            notifyListeners();
+            await Future.delayed(Duration(milliseconds: 1500));
+            isPong = false;
+            notifyListeners();
+            break;
+          case "cancel":
+            message.key = int.parse(message.payload);
+            deleteMessage(message);
+            break;
+          case "search_knowledge":
+            handshakeKeywordList = [];
+            if (message.payload != "") {
+              handshakeKeywordList = ((json.decode(message.payload) as List)
+                  .map((i) => KnowledgeModel.fromJson(i))
+                  .toList());
+            }
+            notifyListeners();
+            break;
+        }
 
-      if (window == 0 && message.bizType != 'pong') {
-        messageReadCount = messageReadCount + 1;
-      }
+        if (window == 0 && message.bizType != 'pong') {
+          messageReadCount = messageReadCount + 1;
+        }
 
-      // 不处理的消息
-      if (message.bizType == 'search_knowledge' || message.bizType == "pong")
-        return;
+        // 不处理的消息
+        if (message.bizType == 'search_knowledge' || message.bizType == "pong")
+          return;
 
-      ImMessage newMsg = _handlerMessage(message);
-      messagesRecord.add(newMsg);
-      notifyListeners();
-    });
-
+        ImMessage newMsg = _handlerMessage(message);
+        messagesRecord.add(newMsg);
+        notifyListeners();
+      });
+    }catch(e){
+      debugPrint(e);
+    }
     // 登录
-    flutterMimc.login();
+    print(111111111);
+    flutterMImc.login();
   }
 
   /// 上传发送图片
@@ -622,7 +646,6 @@ class KeFuStore with ChangeNotifier {
         "key": fileName,
         "token": uploadSecret.secret,
         "file": MultipartFile.fromFile(file.path, filename: fileName)
-        // "file": UploadFileInfo(file, fileName)
       });
 
       void uploadSuccess(url) async {
@@ -850,7 +873,7 @@ class _KeFuState extends State<_KeFu> {
 
   /// 监听接收消息
   void _addEventMessage() {
-    _keFuStore.flutterMimc
+    _keFuStore.flutterMImc
         ?.addEventListenerHandleMessage()
         ?.listen((MIMCMessage msg) {
       // 滚动条置底

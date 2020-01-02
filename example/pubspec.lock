@@ -89,7 +89,7 @@ packages:
       name: flutter_mimc
       url: "https://pub.dartlang.org"
     source: hosted
-    version: "0.1.0"
+    version: "1.0.1"
   flutter_svg:
     dependency: transitive
     description:
@@ -190,7 +190,7 @@ packages:
       name: path_provider
       url: "https://pub.dartlang.org"
     source: hosted
-    version: "1.5.0"
+    version: "1.5.1"
   pedantic:
     dependency: transitive
     description:
