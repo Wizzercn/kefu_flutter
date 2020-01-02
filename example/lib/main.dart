@@ -51,6 +51,7 @@ class _MyHomePageState extends State<MyHomePage> {
     // 配置文件 (1)
     KeFuStore.configs(
         debug: true,
+        autoLogin: true,
         host: "http://kf.aissz.com:666/v1",
         appID: "2882303761518282099",
         appKey: "5521828290099",
@@ -90,11 +91,21 @@ class _MyHomePageState extends State<MyHomePage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            Text(
-              '当前用户id: ${_keFu.imUser?.id ?? 0}',
-            ),
-            Text(
-              '当前有${_keFu.messageReadCount}条未读消息',
+            RichText(
+              text: TextSpan(
+                style: TextStyle(
+                  color: Colors.black
+                ),
+                children: [
+                  TextSpan(text: "用户id: ${_keFu.imUser?.id ?? 0}   "),
+                  TextSpan(text: "${_keFu.messageReadCount}", style: TextStyle(
+                    color: Colors.deepOrange,
+                    fontSize: 30.0,
+                    fontWeight: FontWeight.w600
+                  )),
+                  TextSpan(text: "条未读消息"),
+                ]
+              ),
             ),
             Text(
               '欢迎使用在线客服',

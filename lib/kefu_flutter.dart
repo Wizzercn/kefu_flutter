@@ -105,6 +105,15 @@ class KeFuStore with ChangeNotifier {
   static String mImcTokenData;
   static bool mImcDebug;
 
+  /// 是否自动登录
+  static bool isAutoLogin;
+
+  /// 延迟登录(毫秒)
+  static int delayLoginTime;
+
+  /// 业务平台ID
+  static int platformUserId;
+
   /// API 接口
   static String apiHost;
 
@@ -157,12 +166,18 @@ class KeFuStore with ChangeNotifier {
   /// [mImcAppKey]    mimc AppKey
   /// [mImcAppSecret] mimc AppSecret
   /// [mImcTokenData] mimc TokenData
+  /// [userId]  业务平台ID(扩展使用)
+  /// [autoLogin] 是否自动登录
+  /// [delayTime] 延迟登录，默认1500毫秒，以免未实例化完成就调用登录
   static void configs(
       {String host,
       String appID,
       String appKey,
       String appSecret,
       String mimcToken,
+      int userId,
+      bool autoLogin = true,
+      int delayTime = 1500,
       bool debug = false}) {
     assert(host != null);
     apiHost = host;
@@ -171,6 +186,9 @@ class KeFuStore with ChangeNotifier {
     mImcAppSecret = appSecret;
     mImcTokenData = mimcToken;
     mImcDebug = debug;
+    platformUserId = userId;
+    isAutoLogin = autoLogin;
+    delayLoginTime = delayTime < 1000 ? 1000 : delayTime;
   }
 
   /// 构造器
@@ -185,19 +203,33 @@ class KeFuStore with ChangeNotifier {
 
   /// 初始化
   Future<void> _init() async {
-    try{
-      await _prefsInstance();
-      await _registerImAccount();
-      await _getRobot();
-      await _flutterMImcInstance();
-      _addMimcEvent();
-      getReadCount();
-      _checkIsOutSession();
-      _onCheckIsloogTimeNotCallBack();
-      _onServciceLastMessageTimeNotCallBack();
-      getMessageRecord();
-    }catch(e){
-      debugPrint("报错了==$e");
+    await _prefsInstance();
+    await _registerImAccount();
+    await _getRobot();
+    await _flutterMImcInstance();
+    _addMimcEvent();
+    getReadCount();
+    _checkIsOutSession();
+    _onCheckIsloogTimeNotCallBack();
+    _onServciceLastMessageTimeNotCallBack();
+    getMessageRecord();
+    _currentIsService();
+    loginIm();
+  }
+
+  /// 判断当前是否是客服状态
+  void _currentIsService() async {
+    var serviceUserStringJson =
+        prefs.getString("currentServiceUser_${imUser?.id}");
+    if (serviceUserStringJson != null) {
+      serviceUser = ServiceUser.fromJson(json.decode(serviceUserStringJson));
+      isService = true;
+      await Future.delayed(Duration(milliseconds: delayLoginTime));
+      if (!await flutterMImc?.isOnline()) {
+        debugPrint("登录中...");
+        flutterMImc?.login();
+      }
+      notifyListeners();
     }
   }
 
@@ -213,19 +245,16 @@ class KeFuStore with ChangeNotifier {
       headers: {},
     );
     http = Dio(options);
-    http.interceptors.add(InterceptorsWrapper(
-    onRequest:(RequestOptions options) async {
-     return options; //continue
-    },
-    onResponse:(Response response) async {
-     // 在返回响应数据之前做一些预处理
-     return response; // continue
-    },
-    onError: (DioError e) async {
+    http.interceptors
+        .add(InterceptorsWrapper(onRequest: (RequestOptions options) async {
+      return options; //continue
+    }, onResponse: (Response response) async {
+      // 在返回响应数据之前做一些预处理
+      return response; // continue
+    }, onError: (DioError e) async {
       // 当请求失败时做一些预处理
-     return e;//continue
-    }
-));
+      return e; //continue
+    }));
   }
 
   /// 实例化 FlutterMImc
@@ -248,7 +277,7 @@ class KeFuStore with ChangeNotifier {
       int imAccount = prefs.getInt("ImAccount") ?? 0;
       Response response = await http.post(API_REGISTER, data: {
         "type": 0,
-        "uid": 0,
+        "uid": platformUserId,
         "platform": Platform.isIOS ? 2 : 6,
         "account_id": imAccount
       });
@@ -324,7 +353,7 @@ class KeFuStore with ChangeNotifier {
 
   /// 获取服务器消息列表
   Future<void> getMessageRecord({int timestamp, int pageSize = 20}) async {
-    try{
+    try {
       Response response = await http
           .post(API_GET_MESSAGE,
               data: {
@@ -350,7 +379,7 @@ class KeFuStore with ChangeNotifier {
         }
         notifyListeners();
       }
-    }catch(e){
+    } catch (e) {
       debugPrint(e);
     }
   }
@@ -378,8 +407,7 @@ class KeFuStore with ChangeNotifier {
   /// 上报IM最后活动时间
   Future<void> _upImLastActivity() async {
     Timer.periodic(Duration(milliseconds: 20000), (_) {
-      if (imUser != null)
-        http.get(API_ACTIVITY + '/' + imUser.id.toString());
+      if (imUser != null) http.get(API_ACTIVITY + '/' + imUser.id.toString());
     });
   }
 
@@ -528,7 +556,7 @@ class KeFuStore with ChangeNotifier {
   StreamSubscription _subStatus;
   StreamSubscription _subHandleMessage;
   void _addMimcEvent() {
-    try{
+    try {
       /// 状态发生改变
       _subStatus = flutterMImc
           .addEventListenerStatusChanged()
@@ -570,6 +598,8 @@ class KeFuStore with ChangeNotifier {
           case "transfer":
             serviceUser = ServiceUser.fromJson(json.decode(message.payload));
             prefs.setString("service_user_${serviceUser.id}", message.payload);
+            prefs.setString(
+                "currentServiceUser_${imUser?.id}", message.payload);
             isService = true;
             MessageHandle msgHandle = createMessage(
                 toAccount: toAccount, msgType: "handshake", content: "与客服握握手鸭");
@@ -579,6 +609,7 @@ class KeFuStore with ChangeNotifier {
           case "timeout":
             serviceUser = null;
             isService = false;
+            prefs.remove("currentServiceUser_${imUser?.id}");
             notifyListeners();
             break;
           case "pong":
@@ -616,12 +647,22 @@ class KeFuStore with ChangeNotifier {
         messagesRecord.add(newMsg);
         notifyListeners();
       });
-    }catch(e){
+    } catch (e) {
       debugPrint(e);
     }
-    // 登录
-    print(111111111);
-    flutterMImc.login();
+  }
+
+  /// 登录Im
+  Future<void> loginIm() async {
+    if (!isAutoLogin) return;
+    await Future.delayed(Duration(milliseconds: delayLoginTime));
+    if (!await flutterMImc?.isOnline()) {
+      debugPrint("登录中...");
+      flutterMImc?.login();
+      return;
+    }
+    await Future.delayed(Duration(milliseconds: 2000));
+    loginIm();
   }
 
   /// 上传发送图片
@@ -728,6 +769,7 @@ class KeFuStore with ChangeNotifier {
           serviceLastTime + tomeOutTime) {
         isService = false;
         serviceUser = null;
+        prefs.remove("currentServiceUser_${imUser?.id}");
         notifyListeners();
       }
     }
@@ -789,6 +831,7 @@ class KeFuStore with ChangeNotifier {
 
   /// 滚动条至底部
   void toScrollEnd() async {
+    if (window == 0) return;
     await Future.delayed(Duration(milliseconds: 100));
     scrollController?.jumpTo(0);
   }
@@ -884,7 +927,7 @@ class _KeFuState extends State<_KeFu> {
   // 监听滚动条
   void _onScrollViewControllerAddListener() async {
     try {
-      ScrollPosition position = _keFuStore.scrollController.position;
+      ScrollPosition position = _keFuStore.scrollController?.position;
       // 判断是否到底部
       if (position.pixels + 15.0 > position.maxScrollExtent &&
           !_keFuStore.isScrollEnd &&
@@ -952,6 +995,7 @@ class _KeFuState extends State<_KeFu> {
             toAccount: _keFuStore.toAccount, msgType: "end", content: "");
         _keFuStore.sendMessage(msgHandle);
         _keFuStore.isService = false;
+        _keFuStore.prefs.remove("currentServiceUser_${_keFuStore?.imUser?.id}");
         setState(() {});
       });
       await Future.delayed(Duration(milliseconds: 1000));
