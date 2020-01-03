@@ -478,6 +478,7 @@ class KeFuStore with ChangeNotifier {
 
   /// 删除消息
   void deleteMessage(ImMessage msg) {
+    if (msg == null) return;
     int index = messagesRecord.indexWhere(
         (i) => i.key == msg.key && i.fromAccount == msg.fromAccount);
     messagesRecord.removeAt(index);
@@ -651,9 +652,11 @@ class KeFuStore with ChangeNotifier {
 
   /// 上传发送图片
   void sendPhoto(File file) async {
+    debugPrint("${uploadSecret.toJson()}");
+    MessageHandle msgHandle;
     try {
       if (file == null) return;
-      MessageHandle msgHandle = createMessage(
+      msgHandle = createMessage(
           toAccount: toAccount, msgType: "photo", content: file.path);
       messagesRecord.add(msgHandle.localMessage);
       notifyListeners();
@@ -669,8 +672,8 @@ class KeFuStore with ChangeNotifier {
         "fileName": "file",
         "file_name": fileName,
         "key": fileName,
-        "token": uploadSecret.secret,
-        "file": MultipartFile.fromFile(file.path, filename: fileName)
+        "token": uploadSecret.secret ?? "",
+        "file": MultipartFile.fromFileSync(file.path, filename: fileName)
       });
 
       void uploadSuccess(url) async {
@@ -708,7 +711,7 @@ class KeFuStore with ChangeNotifier {
         msgHandle.localMessage.uploadProgress = (sent / total * 100).ceil();
         notifyListeners();
       });
-
+      debugPrint("${response.data}");
       if (response.statusCode == 200) {
         switch (uploadSecret.mode) {
           case 1:
@@ -722,12 +725,13 @@ class KeFuStore with ChangeNotifier {
         deleteMessage(msgHandle.localMessage);
         MessageHandle systemMsgHandle = createMessage(
             toAccount: toAccount, msgType: "system", content: "图片上传失败！");
-        sendMessage(systemMsgHandle);
+        messagesRecord.add(_handlerMessage(systemMsgHandle.localMessage));
       }
     } catch (e) {
+      deleteMessage(msgHandle.localMessage);
       MessageHandle systemMsgHandle = createMessage(
-          toAccount: toAccount, msgType: "system", content: "图片上传失败！");
-      sendMessage(systemMsgHandle);
+          toAccount: toAccount, msgType: "system", content: "图片上传失败~");
+      messagesRecord.add(_handlerMessage(systemMsgHandle.localMessage));
       debugPrint("图片上传失败！ =======$e");
     }
   }

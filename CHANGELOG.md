@@ -1,3 +1,6 @@
+## [1.0.1+3] - TODO: Add release date.
+
+* TODO: Fix upload image problem
 
 ## [1.0.1+2] - TODO: Add release date.
 
