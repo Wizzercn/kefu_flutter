@@ -151,14 +151,7 @@ class KeFuStore with ChangeNotifier {
   int get toAccount =>
       isService && serviceUser != null ? serviceUser.id : robot.id;
 
-  // 单列
-  static KeFuStore get getInstance {
-    if (instance == null) {
-      instance = KeFuStore();
-    }
-    return instance;
-  }
-
+  // 单列 获取对象
   /// 配置信息
   /// mImcTokenData 不为空，即优先使用 mImcTokenData
   /// [apiHost] 客服后台API地址
@@ -169,13 +162,13 @@ class KeFuStore with ChangeNotifier {
   /// [userId]  业务平台ID(扩展使用)
   /// [autoLogin] 是否自动登录
   /// [delayTime] 延迟登录，默认1500毫秒，以免未实例化完成就调用登录
-  static void configs(
+  static KeFuStore getInstance(
       {String host,
       String appID,
       String appKey,
       String appSecret,
       String mimcToken,
-      int userId,
+      int userId = 0,
       bool autoLogin = true,
       int delayTime = 1500,
       bool debug = false}) {
@@ -189,11 +182,14 @@ class KeFuStore with ChangeNotifier {
     platformUserId = userId;
     isAutoLogin = autoLogin;
     delayLoginTime = delayTime < 1000 ? 1000 : delayTime;
+    if (instance == null) {
+      instance = KeFuStore();
+    }
+    return instance;
   }
 
   /// 构造器
   KeFuStore() {
-    debugPrint("api===$apiHost");
     _dioInstance();
     _getUploadSecret();
     _upImLastActivity();
@@ -238,6 +234,7 @@ class KeFuStore with ChangeNotifier {
 
   /// 实例化 dio
   Future<void> _dioInstance() async {
+    if (http != null) return;
     BaseOptions options = new BaseOptions(
       baseUrl: apiHost,
       connectTimeout: 60000,
@@ -245,16 +242,6 @@ class KeFuStore with ChangeNotifier {
       headers: {},
     );
     http = Dio(options);
-    http.interceptors
-        .add(InterceptorsWrapper(onRequest: (RequestOptions options) async {
-      return options; //continue
-    }, onResponse: (Response response) async {
-      // 在返回响应数据之前做一些预处理
-      return response; // continue
-    }, onError: (DioError e) async {
-      // 当请求失败时做一些预处理
-      return e; //continue
-    }));
   }
 
   /// 实例化 FlutterMImc
@@ -277,9 +264,9 @@ class KeFuStore with ChangeNotifier {
       int imAccount = prefs.getInt("ImAccount") ?? 0;
       Response response = await http.post(API_REGISTER, data: {
         "type": 0,
-        "uid": platformUserId,
+        "uid": platformUserId ?? 0,
         "platform": Platform.isIOS ? 2 : 6,
-        "account_id": imAccount
+        "account_id": imAccount ?? 0
       });
       if (response.data["code"] == 200) {
         imTokenInfo =
@@ -287,7 +274,7 @@ class KeFuStore with ChangeNotifier {
         imUser = ImUser.fromJson(response.data["data"]["user"]);
         prefs.setInt("ImAccount", imUser.id);
       } else {
-        // 1秒重����
+        // 1秒重
         debugPrint(response.data["error"]);
         await Future.delayed(Duration(milliseconds: 1000));
         _registerImAccount();
@@ -320,21 +307,10 @@ class KeFuStore with ChangeNotifier {
   /// [status] 1 or 0  1在客服窗口  0 不在客服窗口
   Future<void> setWindow(int status) async {
     window = status;
+    notifyListeners();
     try {
-      Response response = await http.put(
-          API_WINDOW_CHANGE + '/' + imUser.id.toString(),
+      await http.put(API_WINDOW_CHANGE + '/' + imUser.id.toString(),
           data: {"window": status});
-      notifyListeners();
-      if (status == 1) {
-        debugPrint("在客服窗口");
-      } else {
-        debugPrint("不在客服窗口");
-      }
-      if (response.data["code"] == 200) {
-        debugPrint("切换成功");
-      } else {
-        debugPrint("切换失败");
-      }
     } catch (e) {
       debugPrint(e);
     }
@@ -862,7 +838,7 @@ class _KeFu extends StatefulWidget {
 /// im screen state
 class _KeFuState extends State<_KeFu> {
   /// 客服store
-  KeFuStore _keFuStore = KeFuStore.getInstance;
+  KeFuStore _keFuStore = KeFuStore.instance;
 
   /// 是否显示表情面板
   bool _isShowEmoJiPanel = false;
@@ -1247,10 +1223,10 @@ class _KeFuState extends State<_KeFu> {
 
   @override
   void dispose() {
-    _focusNode?.dispose();
-    _editingController?.dispose();
     // 离开客服窗口
     _keFuStore.setWindow(0);
+    _focusNode?.dispose();
+    _editingController?.dispose();
     super.dispose();
   }
 

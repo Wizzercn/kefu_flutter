@@ -48,25 +48,35 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
 
-    // 配置文件 (1)
-    KeFuStore.configs(
-        debug: true,
-        autoLogin: true,
-        host: "http://kf.aissz.com:666/v1",
-        appID: "2882303761518282099",
-        appKey: "5521828290099",
-        appSecret: "516JCA60FdP9bHQUdpXK+Q=="
-    );
+      // 获得实例并监听数据动态 (1)
+      // 单列 获取对象
+      /// 配置信息
+      /// mImcTokenData 不为空，即优先使用 mImcTokenData
+      /// [apiHost] 客服后台API地址
+      /// [mImcAppID]     mimc AppID
+      /// [mImcAppKey]    mimc AppKey
+      /// [mImcAppSecret] mimc AppSecret
+      /// [mImcTokenData] mimc TokenData 服务端生成
+      /// [userId]        业务平台ID(扩展使用)
+      /// [autoLogin]     是否自动登录
+      /// [delayTime]     延迟登录，默认1500毫秒，以免未实例化完成就调用登录
+      _keFu = KeFuStore.getInstance(
+          debug: true,
+          autoLogin: true,
+          host: "http://kf.aissz.com:666/v1",
+          appID: "2882303761518282099",
+          appKey: "5521828290099",
+          appSecret: "516JCA60FdP9bHQUdpXK+Q=="
+      );
 
-    // 获得实例并监听数据动态 (2)
-    _keFu = KeFuStore.getInstance;
+      // 获得实例并监听数据动态 (2)
+      _keFu.addListener(() async{
+          await Future.delayed(Duration(milliseconds: 200));
+          debugPrint("_keFu对象变动");
+          _keFu = KeFuStore.instance;
+          if(mounted) setState(() {});
+      });
 
-    // 获得实例并监听数据动态 (3)
-    _keFu.addListener((){
-      _keFu = KeFuStore.getInstance;
-      debugPrint("_keFu对象变动");
-      if(mounted) setState(() {});
-    });
 
     super.initState();
 

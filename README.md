@@ -15,7 +15,8 @@
 **本系统** 是基于小米消息云实现的一款简单实用的面向多终端的客服系统，本系统简单易用，易扩展，易整合现有的业务系统，无缝对接自有业务。
 
 
-## 项目依赖库
+## 项目的依赖其他库
+如果您也是用了以下库，存在版本冲突，可以尝试修改
 ``` dart
     flutter_mimc: ^1.0.1
     dio: ^3.0.8
@@ -56,23 +57,41 @@ KeFuStore _keFu;
 
 @override
 void initState() {
-    // 配置文件 (1)
-    KeFuStore.configs(
-        host: "",
+    
+    // 获得实例并监听数据动态 (1)
+    // 单列 获取对象
+    /// 配置信息
+    /// mImcTokenData 不为空，即优先使用 mImcTokenData
+    /// [apiHost] 客服后台API地址
+    /// [mImcAppID]     mimc AppID
+    /// [mImcAppKey]    mimc AppKey
+    /// [mImcAppSecret] mimc AppSecret
+    /// [mImcTokenData] mimc TokenData 服务端生成
+    /// [userId]        业务平台ID(扩展使用)
+    /// [autoLogin]     是否自动登录
+    /// [delayTime]     延迟登录，默认1500毫秒，以免未实例化完成就调用登录
+    _keFu = KeFuStore.getInstance(
+        debug: true,
+        autoLogin: true,
+        host: "http://kf.aissz.com:666/v1",
         appID: "",
         appKey: "",
         appSecret: ""
     );
 
-    // 获得实例并监听数据动态 (2)
-    _keFu = KeFuStore.getInstance;
-
-    // 获得实例并监听数据动态 (3)
-    _keFu.addListener((){
-        _keFu = KeFuStore.getInstance;
+    /// 获得实例并监听数据动态 (2)
+    _keFu.addListener(() async{
+        await Future.delayed(Duration(milliseconds: 200));
         debugPrint("_keFu对象变动");
+        _keFu = KeFuStore.instance;
         if(mounted) setState(() {});
-    }); 
+    });
+
+    /// 或者设置不自动登录，自己手动登录
+    /// _keFu.loginIm()
+
+    super.initState();
+
 }
 
 /// 获得客服页面视图

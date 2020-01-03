@@ -1,4 +1,10 @@
 
+## [1.0.1+2] - TODO: Add release date.
+
+* TODO: change instance function
+* TODO: add example Adroid permission
+
+
 ## [1.0.1+1] - TODO: Add release date.
 
 * TODO: format all file
