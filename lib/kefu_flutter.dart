@@ -658,7 +658,7 @@ class KeFuStore with ChangeNotifier {
       if (file == null) return;
       msgHandle = createMessage(
           toAccount: toAccount, msgType: "photo", content: file.path);
-      messagesRecord.add(msgHandle.localMessage);
+      messagesRecord.add(_handlerMessage(msgHandle.localMessage));
       notifyListeners();
 
       String filePath = file.path;

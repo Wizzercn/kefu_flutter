@@ -1,3 +1,9 @@
+
+## [1.0.1+4] - TODO: Add release date.
+
+* TODO: Fix upload image no avatar
+
+
 ## [1.0.1+3] - TODO: Add release date.
 
 * TODO: Fix upload image problem
