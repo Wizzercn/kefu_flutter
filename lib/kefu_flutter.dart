@@ -457,8 +457,9 @@ class KeFuStore with ChangeNotifier {
   /// 发送消息
   void sendMessage(MessageHandle msgHandle) async {
     //  发送失败提示
-    if(!await flutterMImc.isOnline()){
-      MessageHandle tipsMsg = createMessage(toAccount: toAccount, msgType: "system", content:"您的网络异常，发送失败了~");
+    if (!await flutterMImc.isOnline()) {
+      MessageHandle tipsMsg = createMessage(
+          toAccount: toAccount, msgType: "system", content: "您的网络异常，发送失败了~");
       messagesRecord.add(tipsMsg.localMessage);
       return;
     }
@@ -875,8 +876,9 @@ class _KeFuState extends State<_KeFu> {
 
   // 检索知识库消息
   Timer _searchHandshakeTimer;
-  void _onSearchHandshake(String value) async{
-    if (_keFuStore.isService || !await _keFuStore.flutterMImc.isOnline()) return;
+  void _onSearchHandshake(String value) async {
+    if (_keFuStore.isService || !await _keFuStore.flutterMImc.isOnline())
+      return;
     String content = value.trim();
     if (content == "" || content.isEmpty) {
       _keFuStore.setHandshakeKeywordList([]);
@@ -918,10 +920,8 @@ class _KeFuState extends State<_KeFu> {
 
       // 清除未读消息
       _keFuStore.cleanRead();
-
     }
   }
-
 
   /// 监听接收消息
   void _addEventMessage() {
